@@ -1,0 +1,32 @@
+#!/bin/bash
+#
+# Pre-commit hook — runs SwiftLint + SwiftFormat on staged .swift files.
+# Installed via: make setup-hooks
+#
+# To bypass (emergency): git commit --no-verify
+
+set -euo pipefail
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM -- '*.swift')
+
+if [ -z "$STAGED" ]; then
+    exit 0
+fi
+
+echo "Pre-commit: checking $(echo "$STAGED" | wc -l | tr -d ' ') staged Swift file(s)..."
+
+# SwiftLint (lint only, no fix)
+if command -v swiftlint &> /dev/null; then
+    echo "$STAGED" | xargs swiftlint lint --strict --quiet
+else
+    echo "warning: swiftlint not found, skipping lint (install: brew install swiftlint)"
+fi
+
+# SwiftFormat (check only, no modify)
+if command -v swiftformat &> /dev/null; then
+    echo "$STAGED" | xargs swiftformat --lint
+else
+    echo "warning: swiftformat not found, skipping format check (install: brew install swiftformat)"
+fi
+
+echo "Pre-commit: all checks passed."
