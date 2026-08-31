@@ -1,0 +1,14 @@
+/* MTPError user-facing descriptions */
+"error.device_not_found" = "No Switch 2 in USB-transfer mode was found. Connect the BOTTOM USB-C port (not the dock) and choose System Settings → Data Management → Manage Screenshots and Videos → Copy to PC via USB.";
+"error.claim_failed" = "Could not claim the USB device (%@).";
+"error.underlying" = "Underlying error: %@";
+"error.no_mtp_interface" = "The device exposes no interface with bulk in/out endpoints (unexpected for MTP mode).";
+"error.transfer_failed" = "USB transfer failed: %@. Check the cable and that the console is still on the Copy to PC screen.";
+"error.malformed_data" = "Received malformed PTP data: %@";
+"error.device_response" = "The console rejected the request with response %@.";
+"error.transaction_mismatch" = "PTP transaction mismatch (expected %1$lld, received %2$lld).";
+"error.session_invalidated" = "The connection is out of sync after an earlier failure. Reconnect the console and try again.";
+"error.stale_session_reset" = "Another app left the console connection stuck (a background MTP helper, for example Android File Transfer Agent). Tethersnap reset the USB connection; the console will reconnect in a few seconds.";
+
+/* Storage fallback name */
+"storage.default" = "Storage";

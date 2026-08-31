@@ -1,0 +1,74 @@
+/* 等待 / 连接状态 */
+"waiting.title" = "等待连接 Switch 2";
+"waiting.connecting" = "正在连接…";
+"waiting.step1" = "用数据线将主机底部的 USB-C 接口连接到这台 Mac（不要通过底座）。";
+"waiting.step2" = "在主机上：系统设置 → 数据管理 → 管理截图和视频。";
+"waiting.step3" = "选择“通过 USB 连接复制到电脑”，并保持该画面打开。";
+"failed.title" = "连接失败";
+"failed.retry" = "重试";
+
+/* 筛选与排序 */
+"filter.label" = "筛选";
+"filter.all" = "全部";
+"filter.screenshots" = "截图";
+"filter.videos" = "视频";
+"sort.label" = "排序";
+"sort.newest" = "最新在前";
+"sort.oldest" = "最早在前";
+"sort.largest" = "最大在前";
+"help.sort" = "排序方式";
+"view.label" = "视图";
+"view.all" = "全部内容";
+"view.by_game" = "按游戏分组";
+"group.other" = "其他";
+
+/* 工具栏与菜单 */
+"toolbar.refresh" = "刷新";
+"help.refresh" = "重新加载列表（⌘R）";
+"menu.export" = "导出…";
+"menu.export_to" = "导出到“%@”";
+"menu.select_all" = "全选";
+"menu.deselect_all" = "取消全选";
+"menu.cancel_export" = "取消导出";
+"menu.show_last_export" = "在访达中显示导出文件夹";
+"menu.reveal_log" = "在访达中显示日志文件";
+
+/* 空状态 */
+"empty.title" = "暂无截图和视频";
+"empty.message" = "主机上没有可导出的截图或视频。";
+"empty.filter.title" = "无匹配项";
+"empty.filter.message" = "没有符合当前筛选条件的项目。";
+
+/* 单元格与预览 */
+"kind.screenshot" = "截图";
+"kind.video" = "视频";
+"preview.title" = "预览";
+"preview.video_hint" = "视频需导出后播放。";
+"common.close" = "关闭";
+"common.cancel" = "取消";
+
+/* 导出 */
+"export.all" = "导出全部";
+"export.count" = "导出 %lld 项";
+"export.to_folder" = "导出到“%@”";
+"export.choose_folder" = "选择文件夹…";
+"help.export" = "将截图和视频保存到文件夹（⌘⇧E）";
+"help.export_remembered" = "导出到“%@”（⌘⇧E）；可在菜单中选择其他文件夹";
+"export.progress" = "正在导出第 %1$lld 项，共 %2$lld 项…";
+"export.show_in_finder" = "在访达中显示";
+"export.saved.one" = "已保存 %1$lld 项到“%2$@”";
+"export.saved.other" = "已保存 %1$lld 项到“%2$@”";
+"export.saved_skipped" = "已保存 %1$lld 项到“%2$@”（%3$lld 项已存在）";
+"export.all_existed" = "%1$lld 项已存在于“%2$@”，无需保存";
+"export.cancelled" = "已取消导出（已保存 %lld 项）";
+"export.failed" = "导出失败：%@";
+
+/* 数量 */
+"captures.count.one" = "%lld 项";
+"captures.count.other" = "%lld 项";
+
+/* 设置与拖放 */
+"settings.export_folder" = "导出文件夹";
+"settings.no_folder" = "尚未设置，首次导出后自动记住";
+"settings.clear" = "清除";
+"drag.folder_name" = "Switch 2 截图和视频";

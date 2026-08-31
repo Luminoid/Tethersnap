@@ -33,3 +33,7 @@ buildServer.json
 
 # Claude Code
 .claude/settings.local.json
+
+# Claude Code project guide (local)
+.claude/
+dist/

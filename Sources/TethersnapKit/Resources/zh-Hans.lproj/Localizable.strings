@@ -1,0 +1,14 @@
+/* MTPError 用户可见描述 */
+"error.device_not_found" = "未找到处于 USB 传输模式的 Switch 2。请使用主机底部的 USB-C 接口连接（不要通过底座），并在主机上选择 系统设置 → 数据管理 → 管理截图和视频 → 通过 USB 连接复制到电脑。";
+"error.claim_failed" = "无法占用该 USB 设备（%@）。";
+"error.underlying" = "底层错误：%@";
+"error.no_mtp_interface" = "该设备未提供带有批量输入/输出端点的接口（MTP 模式下不应如此）。";
+"error.transfer_failed" = "USB 传输失败：%@。请检查数据线，并确认主机仍停留在“复制到电脑”画面。";
+"error.malformed_data" = "收到无法解析的 PTP 数据：%@";
+"error.device_response" = "主机拒绝了该请求，响应码为 %@。";
+"error.transaction_mismatch" = "PTP 事务不匹配（应为 %1$lld，收到 %2$lld）。";
+"error.session_invalidated" = "连接在早前的错误后已失去同步。请重新连接主机后再试。";
+"error.stale_session_reset" = "其他应用程序使主机连接卡在了异常状态(例如后台的 MTP 助手 Android File Transfer Agent)。Tethersnap 已重置 USB 连接,主机将在几秒后重新连接。";
+
+/* 存储默认名称 */
+"storage.default" = "存储空间";

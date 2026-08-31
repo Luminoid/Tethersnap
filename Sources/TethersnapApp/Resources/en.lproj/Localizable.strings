@@ -1,0 +1,74 @@
+/* Waiting / connection states */
+"waiting.title" = "Waiting for a Switch 2";
+"waiting.connecting" = "Connecting…";
+"waiting.step1" = "Connect the console's BOTTOM USB-C port to this Mac (not through the dock).";
+"waiting.step2" = "On the console: System Settings → Data Management → Manage Screenshots and Videos.";
+"waiting.step3" = "Choose \"Copy to PC via USB\" and keep that screen open.";
+"failed.title" = "Connection failed";
+"failed.retry" = "Try Again";
+
+/* Filters and sorting */
+"filter.label" = "Filter";
+"filter.all" = "All";
+"filter.screenshots" = "Screenshots";
+"filter.videos" = "Videos";
+"sort.label" = "Sort";
+"sort.newest" = "Newest First";
+"sort.oldest" = "Oldest First";
+"sort.largest" = "Largest First";
+"help.sort" = "Sort order";
+"view.label" = "View";
+"view.all" = "All Captures";
+"view.by_game" = "Group by Game";
+"group.other" = "Other";
+
+/* Toolbar and menus */
+"toolbar.refresh" = "Refresh";
+"help.refresh" = "Reload the capture list (⌘R)";
+"menu.export" = "Export…";
+"menu.export_to" = "Export to \"%@\"";
+"menu.select_all" = "Select All";
+"menu.deselect_all" = "Deselect All";
+"menu.cancel_export" = "Cancel Export";
+"menu.show_last_export" = "Show Export Folder in Finder";
+"menu.reveal_log" = "Reveal Log File in Finder";
+
+/* Empty states */
+"empty.title" = "No Captures";
+"empty.message" = "The console reports no screenshots or videos.";
+"empty.filter.title" = "No Matches";
+"empty.filter.message" = "Nothing matches the current filter.";
+
+/* Capture cells and preview */
+"kind.screenshot" = "Screenshot";
+"kind.video" = "Video";
+"preview.title" = "Preview";
+"preview.video_hint" = "Videos play after export.";
+"common.close" = "Close";
+"common.cancel" = "Cancel";
+
+/* Export */
+"export.all" = "Export All";
+"export.count" = "Export %lld";
+"export.to_folder" = "To \"%@\"";
+"export.choose_folder" = "Choose Folder…";
+"help.export" = "Save captures to a folder (⌘⇧E)";
+"help.export_remembered" = "Export to \"%@\" (⌘⇧E); use the menu to pick another folder";
+"export.progress" = "Exporting %1$lld of %2$lld…";
+"export.show_in_finder" = "Show in Finder";
+"export.saved.one" = "Saved %1$lld capture to \"%2$@\"";
+"export.saved.other" = "Saved %1$lld captures to \"%2$@\"";
+"export.saved_skipped" = "Saved %1$lld to \"%2$@\" (%3$lld already existed)";
+"export.all_existed" = "%1$lld already in \"%2$@\"; nothing new to save";
+"export.cancelled" = "Export cancelled (%lld saved)";
+"export.failed" = "Export failed: %@";
+
+/* Counts */
+"captures.count.one" = "%lld capture";
+"captures.count.other" = "%lld captures";
+
+/* Settings and drag-out */
+"settings.export_folder" = "Export folder";
+"settings.no_folder" = "None yet; your first export sets it";
+"settings.clear" = "Clear";
+"drag.folder_name" = "Switch 2 Captures";

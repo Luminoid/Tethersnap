@@ -3,35 +3,43 @@
 import PackageDescription
 
 let package = Package(
-    name: "Tether",
+    name: "Tethersnap",
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v15),
     ],
     products: [
-        .library(name: "TetherKit", targets: ["TetherKit"]),
-        .executable(name: "tether", targets: ["tether"]),
+        .library(name: "TethersnapKit", targets: ["TethersnapKit"]),
+        .executable(name: "tethersnap", targets: ["tethersnap"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.7.0"),
     ],
     targets: [
         .target(
-            name: "TetherKit",
+            name: "TethersnapKit",
             dependencies: [],
-            path: "Sources/TetherKit"
+            path: "Sources/TethersnapKit",
+            resources: [.process("Resources")]
         ),
         .executableTarget(
-            name: "tether",
+            name: "tethersnap",
             dependencies: [
-                "TetherKit",
+                "TethersnapKit",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
-            path: "Sources/Tether"
+            path: "Sources/Tethersnap"
+        ),
+        .executableTarget(
+            name: "TethersnapApp",
+            dependencies: ["TethersnapKit"],
+            path: "Sources/TethersnapApp",
+            resources: [.process("Resources")]
         ),
         .testTarget(
-            name: "TetherKitTests",
-            dependencies: ["TetherKit"],
-            path: "Tests/TetherKitTests"
+            name: "TethersnapKitTests",
+            dependencies: ["TethersnapKit"],
+            path: "Tests/TethersnapKitTests"
         ),
     ]
 )
