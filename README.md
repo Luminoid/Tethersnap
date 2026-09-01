@@ -4,6 +4,10 @@
 
 macOS has no MTP support, and the Switch-1-era bridges (OpenMTP, MacDroid, Android File Transfer) fail against the Switch 2. Tethersnap is a from-scratch minimal PTP/MTP initiator over `IOUSBHost`: the console is a plain PTP 1.00 responder with no MTP vendor extension (it implements exactly the ten baseline operations 0x1001-0x100A), so Tethersnap speaks only baseline PIMA 15740, the same subset libmtp uses successfully on Linux. Validated end to end against real hardware (firmware 22.5.0): connect, enumeration, thumbnails, and byte-exact exports.
 
+<p align="center">
+  <img src="Docs/app-grid.png" alt="Tethersnap connected to a Nintendo Switch 2, showing the capture grid" width="720">
+</p>
+
 Scaffolded with [Monolith](https://github.com/Luminoid/Monolith).
 
 ## Usage
