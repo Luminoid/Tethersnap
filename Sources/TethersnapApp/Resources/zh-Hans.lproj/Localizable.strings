@@ -6,6 +6,9 @@
 "waiting.step3" = "选择“通过 USB 连接复制到电脑”，并保持该画面打开。";
 "failed.title" = "连接失败";
 "failed.retry" = "重试";
+"status.waiting" = "未在 USB 上检测到主机";
+"status.connected" = "已连接 %1$@（v%2$@）";
+"status.failed" = "连接失败";
 
 /* 筛选与排序 */
 "filter.label" = "筛选";

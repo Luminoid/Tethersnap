@@ -23,6 +23,7 @@ enum Layout {
 
     static let badgeOpacity: Double = 0.9
     static let badgeShadowRadius: CGFloat = 2
+    static let statusDotSize: CGFloat = 8
 
     /// Rubber-band (drag-to-select) rectangle.
     static let rubberBandFillOpacity: Double = 0.15
