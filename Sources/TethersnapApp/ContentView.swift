@@ -17,6 +17,13 @@ struct ContentView: View {
                 gridView
             }
         }
+        // Fill the window first: the waiting/failed screens are fit-sized
+        // VStacks, and the inset pins to the modified view's bounds, so
+        // without this the chip hugs the centered text instead of the edge.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaInset(edge: .bottom) {
+            statusBar
+        }
         .frame(minWidth: Layout.windowMinWidth, minHeight: Layout.windowMinHeight)
         .task { model.start() }
         .fileImporter(isPresented: $model.exportPickerPresented, allowedContentTypes: [.folder]) { result in
@@ -89,26 +96,26 @@ struct ContentView: View {
                 exportMenu
             }
         }
-        .safeAreaInset(edge: .bottom) {
-            statusBar
-        }
     }
 
-    @ViewBuilder
     private var emptyState: some View {
-        if model.items.isEmpty {
-            ContentUnavailableView {
-                Label(L10n.emptyTitle, systemImage: "photo.on.rectangle.angled")
-            } description: {
-                Text(L10n.emptyMessage)
-            }
-        } else {
-            ContentUnavailableView {
-                Label(L10n.emptyFilterTitle, systemImage: "line.3.horizontal.decrease.circle")
-            } description: {
-                Text(L10n.emptyFilterMessage)
+        Group {
+            if model.items.isEmpty {
+                ContentUnavailableView {
+                    Label(L10n.emptyTitle, systemImage: "photo.on.rectangle.angled")
+                } description: {
+                    Text(L10n.emptyMessage)
+                }
+            } else {
+                ContentUnavailableView {
+                    Label(L10n.emptyFilterTitle, systemImage: "line.3.horizontal.decrease.circle")
+                } description: {
+                    Text(L10n.emptyFilterMessage)
+                }
             }
         }
+        // Fill the window so the message centers instead of hugging its text.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @State private var cellFrames: [UInt32: CGRect] = [:]
@@ -119,7 +126,7 @@ struct ContentView: View {
     private var scrollGrid: some View {
         ScrollView {
             gridContent
-                .padding(Layout.spacingLarge)
+                .padding(Layout.spacingXL)
                 .background {
                     // Behind the cells, not an ancestor: clicks on a cell never
                     // reach it; clicks on empty grid space clear the selection,
@@ -295,6 +302,13 @@ struct ContentView: View {
             .padding(Layout.spacingMedium)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Layout.cornerRadius))
             .padding([.horizontal, .bottom], Layout.spacingLarge)
+        } else {
+            HStack {
+                Spacer()
+                StatusChip()
+            }
+            .padding(.horizontal, Layout.spacingLarge)
+            .padding(.bottom, Layout.spacingSmall)
         }
     }
 }
@@ -526,6 +540,33 @@ private struct WaitingView: View {
             }
         }
         .padding(Layout.spacingXL)
+    }
+}
+
+/// Colored dot + one line reflecting the connection state machine, so the app
+/// always says what it currently sees (e.g. "No console detected on USB").
+private struct StatusChip: View {
+    @Environment(AppModel.self) private var model
+
+    private var color: Color {
+        switch model.phase {
+        case .waiting: .gray
+        case .connecting: .orange
+        case .connected: .green
+        case .failed: .red
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: Layout.spacingSmall) {
+            Circle()
+                .fill(color)
+                .frame(width: Layout.statusDotSize, height: Layout.statusDotSize)
+            Text(model.statusLabel)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

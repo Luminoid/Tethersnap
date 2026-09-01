@@ -18,6 +18,12 @@ enum L10n {
     static var waitingStep3: String { localized("waiting.step3") }
     static var failedTitle: String { localized("failed.title") }
     static var retry: String { localized("failed.retry") }
+    static var statusWaiting: String { localized("status.waiting") }
+    static var statusFailed: String { localized("status.failed") }
+
+    static func statusConnected(_ name: String, _ version: String) -> String {
+        String(format: localized("status.connected"), name, version)
+    }
 
     // MARK: - Filters and sorting
 

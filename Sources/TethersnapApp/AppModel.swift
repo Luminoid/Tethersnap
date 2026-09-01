@@ -180,6 +180,16 @@ final class AppModel {
 
     var isExporting: Bool { exportProgress != nil }
 
+    /// One-line connection status for the persistent status chip.
+    var statusLabel: String {
+        switch phase {
+        case .waiting: L10n.statusWaiting
+        case .connecting: L10n.connecting
+        case .connected: L10n.statusConnected(deviceName, firmwareVersion)
+        case .failed: L10n.statusFailed
+        }
+    }
+
     private func updateFilteredItems() {
         let visible = sortOrder.sorted(items.matching(filter.kind))
         if viewMode == .byGame {

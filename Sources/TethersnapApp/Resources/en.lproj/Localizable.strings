@@ -6,6 +6,9 @@
 "waiting.step3" = "Choose \"Copy to PC via USB\" and keep that screen open.";
 "failed.title" = "Connection failed";
 "failed.retry" = "Try Again";
+"status.waiting" = "No console detected on USB";
+"status.connected" = "Connected to %1$@ (v%2$@)";
+"status.failed" = "Connection failed";
 
 /* Filters and sorting */
 "filter.label" = "Filter";
