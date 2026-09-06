@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Bulk-pipe stall recovery matched the legacy IOUSBFamily code (0xe0004007, `kIOUSBWrongPIDErr`) instead of IOUSBHost's own `kUSBHostReturnPipeStalled` (0xe0005000), so a real STALL handshake never triggered `clearStall`. Both families are now recognized, sign-extended forms included, with a unit test.
+
 ## [0.2.0] - 2026-09-01
 
 ### Added
