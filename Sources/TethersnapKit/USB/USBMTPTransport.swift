@@ -239,10 +239,18 @@ public final class USBMTPTransport: MTPTransport {
         try? bulkOutPipe.clearStall()
     }
 
-    /// kIOUSBPipeStalled (0xe0004007); the IOReturn may arrive sign-extended.
-    private static func isPipeStall(_ error: Error) -> Bool {
-        Int32(truncatingIfNeeded: (error as NSError).code) == Int32(bitPattern: 0xE000_4007)
+    /// IOUSBHost reports a STALL handshake as `kUSBHostReturnPipeStalled`
+    /// (0xe0005000, IOUSBHostFamilyDefinitions.h: "Use clearStall to clear this
+    /// condition"). The legacy IOUSBFamily stall codes are accepted too
+    /// (0xe000404f kIOUSBPipeStalled, 0xe0004007 kIOUSBWrongPIDErr "Pipe stall,
+    /// Bad or wrong PID"); the first release matched only the latter, so a real
+    /// stall never cleared. The macros don't import into Swift, and the IOReturn
+    /// may arrive sign-extended in the NSError code.
+    static func isPipeStall(_ error: Error) -> Bool {
+        stallCodes.contains(Int32(truncatingIfNeeded: (error as NSError).code))
     }
+
+    private static let stallCodes: [Int32] = [0xE000_5000, 0xE000_404F, 0xE000_4007].map { Int32(bitPattern: $0) }
 
     // MARK: - USB plumbing
 
