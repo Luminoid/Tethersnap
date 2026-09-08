@@ -1,12 +1,25 @@
 # Tethersnap
 
-> Export Nintendo Switch 2 screenshots and videos to a Mac over USB.
+[![Release](https://img.shields.io/github/v/release/Luminoid/Tethersnap)](https://github.com/Luminoid/Tethersnap/releases/latest)
+[![Platform](https://img.shields.io/badge/macOS-15%2B-blue.svg)](#download)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+> Export Nintendo Switch 2 screenshots and videos to a Mac over USB. Free, open-source Mac app and CLI.
 
 macOS has no MTP support, and the Switch-1-era bridges (OpenMTP, MacDroid, Android File Transfer) fail against the Switch 2. Tethersnap is a from-scratch minimal PTP/MTP initiator over `IOUSBHost`: the console is a plain PTP 1.00 responder with no MTP vendor extension (it implements exactly the ten baseline operations 0x1001-0x100A), so Tethersnap speaks only baseline PIMA 15740, the same subset libmtp uses successfully on Linux. Validated end to end against real hardware (firmware 22.5.0): connect, enumeration, thumbnails, and byte-exact exports.
 
 <p align="center">
-  <img src="Docs/app-grid.png" alt="Tethersnap connected to a Nintendo Switch 2, showing the capture grid" width="720">
+  <img src="Docs/app-grid.png" alt="Tethersnap Mac app connected to a Nintendo Switch 2, showing the screenshot and video capture grid" width="720">
 </p>
+
+## Download
+
+- **DMG**: get `Tethersnap-<version>.dmg` from the [latest release](https://github.com/Luminoid/Tethersnap/releases/latest), open it, and drag Tethersnap into Applications. The app is Developer ID signed and notarized, so it opens without a Gatekeeper warning.
+- **Homebrew**: `brew install --cask luminoid/tap/tethersnap` (from [Luminoid/homebrew-tap](https://github.com/Luminoid/homebrew-tap)).
+
+Requirements: macOS 15 (Sequoia) or later, a Nintendo Switch 2 (tested on firmware 22.5.0; the original Switch is recognized too), and a full-data USB-C cable. No drivers, no kernel extensions, no MTP stack to install.
+
+How it works, in depth: [Tethersnap: Switch 2 captures on a Mac over plain PTP](https://blog.luminoid.dev/Tethersnap-Switch-2-PTP-on-a-Mac/).
 
 Scaffolded with [Monolith](https://github.com/Luminoid/Monolith).
 
@@ -86,3 +99,8 @@ The result, `dist/Tethersnap-<version>.dmg`, is what a GitHub release attaches.
 MIT. © Luminoid. See [LICENSE](LICENSE) and [CHANGELOG](CHANGELOG.md).
 
 Tethersnap is an independent open-source project. It is not affiliated with, endorsed, or sponsored by Nintendo. Nintendo Switch and Nintendo Switch 2 are trademarks of Nintendo, used here only to describe compatibility.
+
+## Related projects
+
+- [Monolith](https://github.com/Luminoid/Monolith): the CLI that scaffolded this project (iOS apps, Swift Packages, Swift CLIs)
+- Everything else at [luminoid.dev](https://luminoid.dev)
