@@ -35,7 +35,7 @@ public final class CaptureLibrary {
     public func loadItems() throws -> [CaptureItem] {
         let storageIDs = try session.storageIDs()
         if storageIDs.isEmpty {
-            TethersnapLog.info(TethersnapLog.library, "responder reports zero storages; it may not be ready yet")
+            TethersnapLog.warning(.library, "responder reports zero storages; it may not be ready yet")
         }
         var items: [CaptureItem] = []
         for storageID in storageIDs {
@@ -44,11 +44,12 @@ public final class CaptureLibrary {
                 for handle in handles {
                     appendItem(for: handle, to: &items)
                 }
-            } catch MTPError.deviceResponse {
+            } catch let MTPError.deviceResponse(code) {
+                TethersnapLog.notice(.library, "flat object query rejected (\(code)) on storage 0x\(String(format: "%08X", storageID)); walking folders instead")
                 try items.append(contentsOf: recursiveItems(storageID: storageID, parent: PTPWildcard.rootParent, folderName: nil))
             }
         }
-        TethersnapLog.info(TethersnapLog.library, "enumerated \(items.count) captures across \(storageIDs.count) storage(s)")
+        TethersnapLog.notice(.library, "enumerated \(items.count) captures across \(storageIDs.count) storage(s)")
         return Self.resolvingFilenameCollisions(items)
     }
 
@@ -62,13 +63,13 @@ public final class CaptureLibrary {
                 items.append(item)
             }
         } catch let MTPError.malformedData(detail) {
-            TethersnapLog.error(TethersnapLog.library, "skipping object 0x\(String(format: "%08X", handle)): malformed ObjectInfo (\(detail))")
+            TethersnapLog.warning(.library, "skipping object 0x\(String(format: "%08X", handle)): malformed ObjectInfo (\(detail))")
         } catch let MTPError.deviceResponse(code) {
-            TethersnapLog.error(TethersnapLog.library, "skipping object 0x\(String(format: "%08X", handle)): response \(code)")
+            TethersnapLog.warning(.library, "skipping object 0x\(String(format: "%08X", handle)): response \(code)")
         } catch {
             // Session-level failures surface on the next transaction as
             // sessionInvalidated; log this one and let the caller find out.
-            TethersnapLog.error(TethersnapLog.library, "object 0x\(String(format: "%08X", handle)) failed: \(error.localizedDescription)")
+            TethersnapLog.error(.library, "object 0x\(String(format: "%08X", handle)) failed", error: error)
         }
     }
 
@@ -83,14 +84,14 @@ public final class CaptureLibrary {
             do {
                 info = try session.objectInfo(for: handle)
             } catch let MTPError.malformedData(detail) {
-                TethersnapLog.error(TethersnapLog.library, "skipping object 0x\(String(format: "%08X", handle)): malformed ObjectInfo (\(detail))")
+                TethersnapLog.warning(.library, "skipping object 0x\(String(format: "%08X", handle)): malformed ObjectInfo (\(detail))")
                 continue
             } catch let MTPError.deviceResponse(code) {
-                TethersnapLog.error(TethersnapLog.library, "skipping object 0x\(String(format: "%08X", handle)): response \(code)")
+                TethersnapLog.warning(.library, "skipping object 0x\(String(format: "%08X", handle)): response \(code)")
                 continue
             }
             if info.isAssociation {
-                TethersnapLog.debug(TethersnapLog.library, "walking folder \(info.filename) (0x\(String(format: "%08X", handle)))")
+                TethersnapLog.debug(.library, "walking folder \(info.filename) (0x\(String(format: "%08X", handle)))")
                 try items.append(contentsOf: recursiveItems(storageID: storageID, parent: handle, folderName: info.filename))
             } else if let item = Self.captureItem(handle: handle, info: info, folderName: folderName) {
                 items.append(item)
@@ -125,7 +126,7 @@ public final class CaptureLibrary {
             guard occurrence > 1 else { return item }
             var copy = item
             copy.exportFilename = disambiguated(item.filename, occurrence: occurrence)
-            TethersnapLog.info(TethersnapLog.library, "duplicate filename \(item.filename) (storage 0x\(String(format: "%08X", item.storageID))); exporting as \(copy.exportFilename)")
+            TethersnapLog.notice(.library, "duplicate filename \(item.filename) (storage 0x\(String(format: "%08X", item.storageID))); exporting as \(copy.exportFilename)")
             return copy
         }
     }
@@ -200,22 +201,37 @@ public final class CaptureLibrary {
         let destination = directory.appendingPathComponent(item.exportFilename)
         let fileManager = FileManager.default
         if skipExisting, Self.existingFileMatches(item, at: destination) {
-            TethersnapLog.debug(TethersnapLog.library, "skipping existing \(item.exportFilename)")
+            TethersnapLog.debug(.library, "skipping existing \(item.exportFilename)")
             return DownloadResult(url: destination, skippedExisting: true)
         }
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            TethersnapLog.error(.library, "could not create the export folder", private: directory.path, error: error)
+            throw error
+        }
 
-        TethersnapLog.info(TethersnapLog.library, "downloading \(item.exportFilename) (\(item.sizeInBytes) bytes, storage 0x\(String(format: "%08X", item.storageID)))")
+        TethersnapLog.debug(.library, "downloading \(item.exportFilename) (\(item.sizeInBytes) bytes, storage 0x\(String(format: "%08X", item.storageID)))")
         let temporary = directory.appendingPathComponent(".\(item.exportFilename).tethersnap-partial")
-        fileManager.createFile(atPath: temporary.path, contents: nil)
-        let fileHandle = try FileHandle(forWritingTo: temporary)
+        let fileHandle: FileHandle
+        do {
+            // Creates or truncates the partial file, throwing the real reason on failure.
+            try Data().write(to: temporary)
+            fileHandle = try FileHandle(forWritingTo: temporary)
+        } catch {
+            try? fileManager.removeItem(at: temporary)
+            TethersnapLog.error(.library, "could not open the partial file for \(item.exportFilename)", private: temporary.path, error: error)
+            throw error
+        }
 
         // Everything through the final move is guarded: any failure removes the
         // (Finder-invisible) dot-prefixed partial file instead of leaking it.
+        var written: Int64 = 0
         do {
             try session.object(for: item.handle, sink: { chunk in
                 if let cancelToken, cancelToken.isCancelled { throw CancellationError() }
                 try fileHandle.write(contentsOf: chunk)
+                written += Int64(chunk.count)
             }, progress: { received in
                 progress?(received, item.sizeInBytes)
             })
@@ -228,9 +244,9 @@ public final class CaptureLibrary {
             try? fileHandle.close()
             try? fileManager.removeItem(at: temporary)
             if error is CancellationError {
-                TethersnapLog.info(TethersnapLog.library, "download of \(item.exportFilename) cancelled")
+                TethersnapLog.notice(.library, "download of \(item.exportFilename) cancelled after \(written)/\(item.sizeInBytes) bytes")
             } else {
-                TethersnapLog.error(TethersnapLog.library, "download of \(item.exportFilename) failed: \(error.localizedDescription)")
+                TethersnapLog.error(.library, "download of \(item.exportFilename) failed after \(written)/\(item.sizeInBytes) bytes", error: error)
             }
             throw error
         }
@@ -239,9 +255,10 @@ public final class CaptureLibrary {
             do {
                 try fileManager.setAttributes([.modificationDate: date], ofItemAtPath: destination.path)
             } catch {
-                TethersnapLog.error(TethersnapLog.library, "could not set capture date on \(item.exportFilename): \(error.localizedDescription)")
+                TethersnapLog.warning(.library, "could not set capture date on \(item.exportFilename)", error: error)
             }
         }
+        TethersnapLog.info(.library, "downloaded \(item.exportFilename) (\(written) bytes)", private: destination.path)
         return DownloadResult(url: destination, skippedExisting: false)
     }
 

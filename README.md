@@ -47,19 +47,31 @@ The UI and error messages are localized in English and Simplified Chinese (follo
 
 ## Debugging
 
-The app writes a complete debug trace of every run to `~/Library/Logs/Tethersnap/Tethersnap.log` (the run before it is kept as `Tethersnap.previous.log`), with no setup: just reproduce the problem and grab the file, or use **Help → Reveal Log File in Finder**.
+The app writes a complete debug trace of every run to `~/Library/Logs/Tethersnap/Tethersnap.log` (the run before it is kept as `Tethersnap.previous.log`), with no setup: just reproduce the problem and grab the file, or use **Help → Reveal Log File in Finder**. Each line carries an ISO-8601 timestamp, the level, and the category, and the first line of a run names the app version, build, and macOS version. If the file cannot be created, the status bar says so and logging continues in the unified log.
 
-Everything also lands in the unified log under subsystem `dev.luminoid.Tethersnap` (categories `usb`, `mtp`, `library`, `app`):
+Everything also lands in the unified log under subsystem `dev.luminoid.Tethersnap` (categories `usb`, `mtp`, `library`, `app`). Levels follow `os.Logger`: `notice` and above (sessions, connects, export outcomes, warnings, errors) are saved on disk and can be read after the fact, `info` is kept in memory for a while, and `debug` (hex previews, per-transaction traces) is written only while the CLI's `--verbose` or the app's log file is on. Errors are logged with their domain and code. File paths are private: the unified log shows them as `<private>`, while the log file, which stays on your Mac, keeps them in full.
+
+Read the last hour after the fact:
+
+```bash
+/usr/bin/log show --last 1h --info --debug --predicate 'subsystem == "dev.luminoid.Tethersnap"'
+```
+
+Or watch live:
 
 ```bash
 /usr/bin/log stream --level debug --predicate 'subsystem == "dev.luminoid.Tethersnap"'
 ```
 
-The CLI's `--verbose` flag mirrors the same messages to stderr (USB transfer hex previews, PTP transactions with response codes), which is the fastest way to see where a conversation with the console stops:
+Use the full `/usr/bin/log` path in zsh, whose `log` builtin shadows the command.
+
+The CLI's `--verbose` flag mirrors every line to stderr with a local timestamp and the category (`12:23:12.285 [debug] usb: bulk-in …`), covering USB transfer hex previews and PTP transactions with response codes. It is the fastest way to see where a conversation with the console stops:
 
 ```bash
 swift run tethersnap probe --verbose
 ```
+
+The CLI writes `error:` and `warning:` lines to stderr and exits non-zero on failure (including a `pull` whose named files are all missing), so stdout stays clean for scripts.
 
 ## Targets
 

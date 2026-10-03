@@ -303,7 +303,14 @@ struct ContentView: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Layout.cornerRadius))
             .padding([.horizontal, .bottom], Layout.spacingLarge)
         } else {
-            HStack {
+            HStack(spacing: Layout.spacingMedium) {
+                if let failure = model.logFileFailure {
+                    // Non-blocking: the app works without the file; the tooltip says why.
+                    Label(L10n.logFileUnavailable, systemImage: "exclamationmark.triangle")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .help(failure)
+                }
                 Spacer()
                 StatusChip()
             }

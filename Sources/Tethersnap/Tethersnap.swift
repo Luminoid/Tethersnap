@@ -13,7 +13,7 @@ struct Tethersnap: ParsableCommand {
 
         Tethersnap is an independent project, not affiliated with or endorsed by Nintendo.
         """,
-        version: "0.1.0",
+        version: TethersnapVersion.current,
         subcommands: [Probe.self, List.self, Pull.self],
         defaultSubcommand: List.self
     )
@@ -22,7 +22,7 @@ struct Tethersnap: ParsableCommand {
 // MARK: - Helpers
 
 struct GlobalOptions: ParsableArguments {
-    @Flag(name: [.short, .long], help: "Mirror debug logs (USB transfers, PTP transactions) to stderr.")
+    @Flag(name: [.short, .long], help: "Mirror timestamped debug logs (USB transfers, PTP transactions) to stderr.")
     var verbose = false
 
     func apply() {
@@ -38,13 +38,22 @@ enum CLIFormat {
     }()
 }
 
+/// Diagnostics (`error:`, `warning:`, failures) go to stderr so stdout stays the
+/// command's output (listings, progress, summaries) and can be piped.
+enum CLIOutput {
+    static func printError(_ line: String) {
+        fflush(stdout) // keep ordering sane when both streams share a terminal
+        FileHandle.standardError.write(Data((line + "\n").utf8))
+    }
+}
+
 enum CLIConnection {
-    /// Connect or print the localized error and exit nonzero.
+    /// Connect or print the localized error to stderr and exit nonzero.
     static func open() throws -> TethersnapConnection {
         do {
             return try TethersnapConnection.connect()
         } catch let error as MTPError {
-            print("error: \(error.localizedDescription)")
+            CLIOutput.printError("error: \(error.localizedDescription)")
             throw ExitCode.failure
         }
     }
@@ -196,7 +205,12 @@ struct Pull: ParsableCommand {
             wanted = items.filter { requested.contains($0.filename) }
             let missing = requested.subtracting(wanted.map(\.filename))
             for name in missing.sorted() {
-                print("warning: '\(name)' not found on the console, skipping")
+                CLIOutput.printError("warning: '\(name)' not found on the console, skipping")
+            }
+            // Naming files and getting none of them is a failure, not an empty success.
+            guard !wanted.isEmpty else {
+                CLIOutput.printError("error: none of the named files are on the console (see 'tethersnap list')")
+                throw ExitCode.failure
             }
         }
 
@@ -224,7 +238,7 @@ struct Pull: ParsableCommand {
                     downloaded += 1
                 }
             } catch {
-                print("\r\(label)  FAILED: \(error.localizedDescription)")
+                CLIOutput.printError("\r\(label)  FAILED: \(error.localizedDescription)")
                 throw ExitCode.failure
             }
         }

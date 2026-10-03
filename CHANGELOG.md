@@ -7,8 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Logging is rebuilt on a shared core with six levels (`debug`, `info`, `notice`, `warning`, `error`, `fault`). Sessions, connects, enumeration, and export outcomes log at `notice`, so they are saved on disk; recoveries (stall clears, the stale-session ladder, the session-first handshake, the flat-query fallback) log at `warning` or `notice`. Errors are logged with their domain and code instead of a localized description, which on a Chinese system came out in Chinese with no code. File paths are private in the unified log.
+- `--verbose` stderr lines carry a local timestamp and the category (`HH:mm:ss.SSS [level] category: message`). Log-file lines carry an ISO-8601 timestamp, level, category, and message, plus the private detail (paths), since the file stays on the user's Mac.
+- Debug lines are written only while `--verbose` or the app's log file is on (or `TethersnapLog.minimumLevel` is lowered); `log stream --level debug` alone no longer shows them.
+- CLI diagnostics (`error:`, `warning:`, `FAILED`) go to stderr; stdout keeps listings, progress, and summaries.
+- `TethersnapLog.enableFileLogging(at:)` throws instead of returning nil, and log categories are `TethersnapLog.Category` values (`.usb`, `.mtp`, `.library`, `.app`).
+
+### Added
+
+- The app's first log line names the app version, build, and macOS version.
+- Outcome lines for downloads (bytes written, or bytes received before a failure), exports (saved, skipped, and cancelled counts), the quit-time CloseSession timeout, thumbnail decode failures, an unavailable USB device watcher, and the app's connecting and retry transitions.
+- A status-bar note when the log file cannot be created, with the reason in its tooltip.
+
 ### Fixed
 
+- `tethersnap --version` reported 0.1.0 while the app was 0.2.0. A single `TethersnapVersion` constant now feeds the CLI, and a test keeps it equal to `Support/Info.plist`.
+- `tethersnap pull` exited 0 when none of the named files were on the console; it now exits non-zero.
+- Bulk-transfer failures logged no error code, so a timeout, a stall, and an unplug looked alike; `clearStall` and the configuration-descriptor read swallowed their errors.
+- A failed log-file setup (folder, rotation, or file open) was silent.
+- The 5-second discovery poll logged "no console" on every poll; it now logs when discovery changes.
+- The Localization tests looked for `.lproj` folders at the top of the resource bundle, which fails under SwiftPM's Swift Build backend (`Contents/Resources/`); they now go through `resourceURL`.
 - Bulk-pipe stall recovery matched the legacy IOUSBFamily code (0xe0004007, `kIOUSBWrongPIDErr`) instead of IOUSBHost's own `kUSBHostReturnPipeStalled` (0xe0005000), so a real STALL handshake never triggered `clearStall`. Both families are now recognized, sign-extended forms included, with a unit test.
 
 ## [0.2.0] - 2026-09-01

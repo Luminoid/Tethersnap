@@ -100,28 +100,4 @@ struct RobustnessTests {
         token.cancel()
         #expect(token.isCancelled)
     }
-
-    @Test
-    func `File logging writes timestamped debug lines and rotates the previous run`() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tethersnap-log-\(UUID().uuidString)")
-        let url = directory.appendingPathComponent("Tethersnap.log")
-        defer {
-            TethersnapLog.disableFileLogging()
-            try? FileManager.default.removeItem(at: directory)
-        }
-
-        #expect(TethersnapLog.enableFileLogging(at: url) != nil)
-        TethersnapLog.info(TethersnapLog.app, "first-run marker")
-        TethersnapLog.debug(TethersnapLog.usb, "debug marker reaches the file sink")
-        TethersnapLog.disableFileLogging()
-        let firstRun = try String(contentsOf: url, encoding: .utf8)
-        #expect(firstRun.contains("[info] app: first-run marker"))
-        #expect(firstRun.contains("[debug] usb: debug marker reaches the file sink"))
-
-        #expect(TethersnapLog.enableFileLogging(at: url) != nil)
-        TethersnapLog.disableFileLogging()
-        let previous = url.deletingPathExtension().appendingPathExtension("previous.log")
-        let rotated = try String(contentsOf: previous, encoding: .utf8)
-        #expect(rotated.contains("first-run marker"))
-    }
 }

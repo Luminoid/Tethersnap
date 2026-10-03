@@ -9,6 +9,7 @@
 "status.waiting" = "未在 USB 上检测到主机";
 "status.connected" = "已连接 %1$@（v%2$@）";
 "status.failed" = "连接失败";
+"status.log_unavailable" = "日志文件不可用；日志仍会写入“控制台”";
 
 /* 筛选与排序 */
 "filter.label" = "筛选";

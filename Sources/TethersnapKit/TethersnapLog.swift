@@ -1,136 +1,328 @@
+//
+//  TethersnapLog.swift
+//  TethersnapKit
+//
+//  Shared logging core. This file is identical across Luminoid packages apart
+//  from the type prefix, subsystem, and module name; regenerate it rather than
+//  editing it by hand. Categories live in a separate file.
+//
+
 import Foundation
 import os
-import Synchronization
 
-/// Unified logging for the whole stack (subsystem `dev.luminoid.Tethersnap`).
+// MARK: - TethersnapLogLevel
+
+/// Log severity, lowest to highest. The names follow `os.Logger`'s methods.
+public nonisolated enum TethersnapLogLevel: String, Sendable, CaseIterable, Comparable, Codable {
+    /// Development detail. Never saved on device.
+    case debug
+    /// Helpful context. Kept in memory only, so usually missing from a sysdiagnose.
+    case info
+    /// A normal but significant event (configuration, lifecycle). Saved on device.
+    case notice
+    /// Something went wrong, but the operation recovered or degraded.
+    case warning
+    /// An operation failed.
+    case error
+    /// A bug: an invariant the package relies on is broken.
+    case fault
+
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        lhs.rank < rhs.rank
+    }
+
+    /// The unified-logging type this level is written at (`warning` matches `Logger.warning`).
+    public var osLogType: OSLogType {
+        switch self {
+        case .debug: .debug
+        case .info: .info
+        case .notice: .default
+        case .warning, .error: .error
+        case .fault: .fault
+        }
+    }
+
+    private var rank: Int {
+        Self.allCases.firstIndex(of: self) ?? 0
+    }
+}
+
+// MARK: - TethersnapLogEntry
+
+/// One written log line, as ``TethersnapLog/handler`` receives it.
+public nonisolated struct TethersnapLogEntry: Sendable, Hashable {
+    /// When the line was written.
+    public let timestamp: Date
+    /// Severity.
+    public let level: TethersnapLogLevel
+    /// Category name, e.g. "Session".
+    public let category: String
+    /// The public text: the message, plus an attached error's summary in brackets.
+    public let message: String
+    /// User data and full error descriptions; redacted in field logs.
+    public let privateDetail: String?
+    /// The call site's file name.
+    public let file: String
+    /// The call site's line.
+    public let line: Int
+
+    public init(timestamp: Date = Date(), level: TethersnapLogLevel, category: String, message: String, privateDetail: String? = nil, file: String = "", line: Int = 0) {
+        self.timestamp = timestamp
+        self.level = level
+        self.category = category
+        self.message = message
+        self.privateDetail = privateDetail
+        self.file = file
+        self.line = line
+    }
+
+    /// `[File.swift:12] message`, or the message alone when the call site is unknown.
+    public var formattedMessage: String {
+        file.isEmpty ? message : "[\(file):\(line)] \(message)"
+    }
+}
+
+// MARK: - TethersnapLog
+
+/// Logging on `os.Logger` under subsystem ``subsystem``.
 ///
-/// Everything lands in the unified log; watch it with:
-/// `log stream --level debug --predicate 'subsystem == "dev.luminoid.Tethersnap"'`
-/// The CLI's `--verbose` additionally mirrors every message to stderr via
-/// `echoToStderr`. The app enables `enableFileLogging()` so every run leaves a
-/// complete debug trace at a stable path with zero setup.
-public enum TethersnapLog {
+/// - ``minimumLevel`` (default `.info`) sets how much is written. It is clamped at `.error`,
+///   so errors and faults always reach the unified log and the handler.
+/// - ``handler`` receives every written entry in addition to the unified log, for forwarding
+///   to an app's own log store or crash reporter.
+/// - Message text is public: keep it to static text, codes, ids, counts, and dimensions.
+///   Pass user data (URLs, file paths, payloads) as `private:`.
+///
+/// Watch it live: `log stream --level debug --predicate 'subsystem == "dev.luminoid.Tethersnap"'`
+public nonisolated enum TethersnapLog {
+    /// The unified-logging subsystem every line is written under.
     public static let subsystem = "dev.luminoid.Tethersnap"
 
-    /// One log category: the `OSLog` handle for enablement checks plus the
-    /// `Logger` that writes through it.
-    public struct Channel: @unchecked Sendable {
-        fileprivate let log: OSLog
+    /// A log category. The package declares its categories as static members.
+    public struct Category: Sendable {
+        /// The category name shown in Console.
+        public let name: String
         fileprivate let logger: Logger
-        fileprivate let name: String
 
-        fileprivate init(_ category: String) {
-            log = OSLog(subsystem: TethersnapLog.subsystem, category: category)
-            logger = Logger(log)
-            name = category
+        package init(_ name: String) {
+            self.name = name
+            logger = Logger(subsystem: TethersnapLog.subsystem, category: name)
         }
     }
 
-    public static let usb = Channel("usb")
-    public static let mtp = Channel("mtp")
-    public static let library = Channel("library")
-    public static let app = Channel("app")
-
-    private static let stderrEcho = Mutex(false)
-
-    public static var echoToStderr: Bool {
-        get { stderrEcho.withLock { $0 } }
-        set { stderrEcho.withLock { $0 = newValue } }
+    private struct State {
+        var minimumLevel: TethersnapLogLevel = .info
+        var handler: (@Sendable (TethersnapLogEntry) -> Void)?
+        var onceKeys: Set<String> = []
     }
 
-    // MARK: - File sink
+    private static let state = OSAllocatedUnfairLock(initialState: State())
 
-    private struct FileSink {
-        let handle: FileHandle
-        let formatter: ISO8601DateFormatter // only touched under the lock
+    /// A threshold and handler bound to the current task by `withScopedConfiguration`.
+    private struct Scope: Sendable {
+        let minimumLevel: TethersnapLogLevel
+        let handler: (@Sendable (TethersnapLogEntry) -> Void)?
     }
 
-    private static let fileSink = Mutex<FileSink?>(nil)
+    @TaskLocal private static var scope: Scope?
 
-    public static var isFileLoggingEnabled: Bool {
-        fileSink.withLock { $0 != nil }
+    // MARK: - Configuration
+
+    /// Lines below this level are not written. Default `.info`; values above `.error` clamp to `.error`.
+    public static var minimumLevel: TethersnapLogLevel {
+        get { state.withLock { $0.minimumLevel } }
+        set { state.withLock { $0.minimumLevel = min(newValue, .error) } }
     }
 
-    /// Where `enableFileLogging()` writes by default; the previous run is kept
-    /// beside it as `Tethersnap.previous.log`.
-    public static var defaultLogFileURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/Tethersnap/Tethersnap.log")
+    /// Receives every written entry, after the unified log, on the logging thread.
+    public static var handler: (@Sendable (TethersnapLogEntry) -> Void)? {
+        get { state.withLock { $0.handler } }
+        set { state.withLock { $0.handler = newValue } }
     }
 
-    /// Start mirroring every message (debug included) to `url`, rotating any
-    /// existing file to `<name>.previous.log` first so the run before a crash
-    /// stays inspectable. Returns the URL on success.
-    @discardableResult
-    public static func enableFileLogging(at url: URL = defaultLogFileURL) -> URL? {
-        let fileManager = FileManager.default
-        try? fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if fileManager.fileExists(atPath: url.path) {
-            let previous = url.deletingPathExtension().appendingPathExtension("previous.log")
-            try? fileManager.removeItem(at: previous)
-            try? fileManager.moveItem(at: url, to: previous)
+    /// Runs `body` with a threshold and handler that apply only to the current task and its child tasks,
+    /// leaving the process-wide ``minimumLevel`` and ``handler`` untouched. For tests, which run in parallel
+    /// and share the process-wide settings. The threshold clamps at `.error` like ``minimumLevel``.
+    package static func withScopedConfiguration<R>(
+        minimumLevel: TethersnapLogLevel,
+        handler: (@Sendable (TethersnapLogEntry) -> Void)?,
+        _ body: () throws -> R
+    ) rethrows -> R {
+        try $scope.withValue(Scope(minimumLevel: min(minimumLevel, .error), handler: handler), operation: body)
+    }
+
+    /// The threshold and handler in effect: the task's scoped configuration, else the process-wide one.
+    private static func effectiveConfiguration() -> (minimumLevel: TethersnapLogLevel, handler: (@Sendable (TethersnapLogEntry) -> Void)?) {
+        if let scope {
+            return (scope.minimumLevel, scope.handler)
         }
-        guard fileManager.createFile(atPath: url.path, contents: nil) else { return nil }
-        // Handle and formatter are built inside the lock so no task-isolated
-        // value crosses into the Mutex's sending closure (Swift 6 regions).
-        let opened = fileSink.withLock { sink in
-            guard let handle = try? FileHandle(forWritingTo: url) else { return false }
-            try? sink?.handle.close()
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            sink = FileSink(handle: handle, formatter: formatter)
-            return true
+        return state.withLock { ($0.minimumLevel, $0.handler) }
+    }
+
+    // MARK: - Writing
+
+    /// Whether a line at `level` would be written; use it to skip work that only feeds a log line.
+    package static func isLogging(_ level: TethersnapLogLevel) -> Bool {
+        level >= effectiveConfiguration().minimumLevel
+    }
+
+    package static func debug(
+        _ category: Category,
+        _ message: @autoclosure () -> String,
+        private detail: @autoclosure () -> String? = nil,
+        error: (any Error)? = nil,
+        file: String = #fileID,
+        line: Int = #line
+    ) {
+        log(.debug, category, message(), private: detail(), error: error, file: file, line: line)
+    }
+
+    package static func info(
+        _ category: Category,
+        _ message: @autoclosure () -> String,
+        private detail: @autoclosure () -> String? = nil,
+        error: (any Error)? = nil,
+        file: String = #fileID,
+        line: Int = #line
+    ) {
+        log(.info, category, message(), private: detail(), error: error, file: file, line: line)
+    }
+
+    package static func notice(
+        _ category: Category,
+        _ message: @autoclosure () -> String,
+        private detail: @autoclosure () -> String? = nil,
+        error: (any Error)? = nil,
+        file: String = #fileID,
+        line: Int = #line
+    ) {
+        log(.notice, category, message(), private: detail(), error: error, file: file, line: line)
+    }
+
+    package static func warning(
+        _ category: Category,
+        _ message: @autoclosure () -> String,
+        private detail: @autoclosure () -> String? = nil,
+        error: (any Error)? = nil,
+        file: String = #fileID,
+        line: Int = #line
+    ) {
+        log(.warning, category, message(), private: detail(), error: error, file: file, line: line)
+    }
+
+    package static func error(
+        _ category: Category,
+        _ message: @autoclosure () -> String,
+        private detail: @autoclosure () -> String? = nil,
+        error: (any Error)? = nil,
+        file: String = #fileID,
+        line: Int = #line
+    ) {
+        log(.error, category, message(), private: detail(), error: error, file: file, line: line)
+    }
+
+    package static func fault(
+        _ category: Category,
+        _ message: @autoclosure () -> String,
+        private detail: @autoclosure () -> String? = nil,
+        error: (any Error)? = nil,
+        file: String = #fileID,
+        line: Int = #line
+    ) {
+        log(.fault, category, message(), private: detail(), error: error, file: file, line: line)
+    }
+
+    /// Writes one line. The message and detail closures run only when the line is written.
+    package static func log(
+        _ level: TethersnapLogLevel,
+        _ category: Category,
+        _ message: @autoclosure () -> String,
+        private detail: @autoclosure () -> String? = nil,
+        error: (any Error)? = nil,
+        file: String = #fileID,
+        line: Int = #line
+    ) {
+        let configuration = effectiveConfiguration()
+        guard level >= configuration.minimumLevel else { return }
+
+        var publicText = message()
+        var privateParts: [String] = []
+        if let detail = detail() {
+            privateParts.append(detail)
         }
-        return opened ? url : nil
-    }
-
-    /// Stop file logging and close the handle (tests, mainly).
-    public static func disableFileLogging() {
-        fileSink.withLock { sink in
-            try? sink?.handle.close()
-            sink = nil
+        if let error {
+            let described = describe(error)
+            publicText += " [\(described.summary)]"
+            if let errorDetail = described.detail {
+                privateParts.append(errorDetail)
+            }
         }
-    }
-
-    // MARK: - Emit
-
-    /// Debug messages (hex previews, per-transaction traces) are hot-path; the
-    /// autoclosure must only be evaluated when someone is actually listening.
-    /// (With the file sink on, someone always is; one line per 512 KB chunk is
-    /// noise-level next to the USB transfer itself.)
-    public static func debug(_ channel: Channel, _ message: @autoclosure () -> String) {
-        guard channel.log.isEnabled(type: .debug) || echoToStderr || isFileLoggingEnabled else { return }
-        let text = message()
-        channel.logger.debug("\(text, privacy: .public)")
-        record("debug", channel: channel, text)
-    }
-
-    public static func info(_ channel: Channel, _ message: @autoclosure () -> String) {
-        let text = message()
-        channel.logger.info("\(text, privacy: .public)")
-        record("info", channel: channel, text)
-    }
-
-    public static func error(_ channel: Channel, _ message: @autoclosure () -> String) {
-        let text = message()
-        channel.logger.error("\(text, privacy: .public)")
-        record("error", channel: channel, text)
-    }
-
-    /// Hex dump of a buffer's first bytes, for wire-level traces.
-    public static func hexPreview(_ data: Data, limit: Int = 16) -> String {
-        let shown = data.prefix(limit).map { String(format: "%02x", $0) }.joined(separator: " ")
-        return data.count > limit ? "\(shown) … (\(data.count) bytes)" : "\(shown) (\(data.count) bytes)"
-    }
-
-    private static func record(_ level: String, channel: Channel, _ text: String) {
-        if echoToStderr {
-            fputs("[tethersnap \(level)] \(text)\n", stderr)
+        let privateText = privateParts.isEmpty ? nil : privateParts.joined(separator: " | ")
+        let fileName = file.split(separator: "/").last.map(String.init) ?? file
+        let location = "[\(fileName):\(line)]"
+        if let privateText {
+            category.logger.log(level: level.osLogType, "\(location, privacy: .public) \(publicText, privacy: .public) | \(privateText, privacy: .private)")
+        } else {
+            category.logger.log(level: level.osLogType, "\(location, privacy: .public) \(publicText, privacy: .public)")
         }
-        fileSink.withLock { sink in
-            guard let sink else { return }
-            let line = "\(sink.formatter.string(from: Date())) [\(level)] \(channel.name): \(text)\n"
-            try? sink.handle.write(contentsOf: Data(line.utf8))
+        configuration.handler?(TethersnapLogEntry(level: level, category: category.name, message: publicText, privateDetail: privateText, file: fileName, line: line))
+    }
+
+    /// Writes a line once per `key` until ``resetOnce(_:)``, for failures on per-frame or polling paths.
+    /// Keys should come from a small fixed set; each is remembered until reset.
+    package static func once(
+        _ key: String,
+        _ level: TethersnapLogLevel,
+        _ category: Category,
+        _ message: @autoclosure () -> String,
+        private detail: @autoclosure () -> String? = nil,
+        error: (any Error)? = nil,
+        file: String = #fileID,
+        line: Int = #line
+    ) {
+        guard isLogging(level), state.withLock({ $0.onceKeys.insert(key).inserted }) else { return }
+        log(level, category, message(), private: detail(), error: error, file: file, line: line)
+    }
+
+    /// Re-arms a ``once(_:_:_:_:private:error:file:line:)`` key, typically when the failing state clears.
+    package static func resetOnce(_ key: String) {
+        state.withLock { _ = $0.onceKeys.remove(key) }
+    }
+
+    // MARK: - Errors
+
+    /// Splits an error into a public summary and a private detail.
+    ///
+    /// - Swift enum errors summarize as `Module.Type.case`, plus the summary of an error payload.
+    /// - Other errors summarize as NSError domain and code, plus the underlying error's domain and code.
+    /// - The detail is the full `String(describing:)`, which may carry user data; `nil` when the summary already says it all.
+    public static func describe(_ error: any Error) -> (summary: String, detail: String?) {
+        let full = String(describing: error)
+        let summary: String
+        let mirror = Mirror(reflecting: error)
+        if mirror.displayStyle == .enum {
+            let payload = mirror.children.first
+            var text = "\(String(reflecting: type(of: error))).\(payload?.label ?? full)"
+            if let inner = payload.flatMap({ firstError(in: $0.value) }) {
+                text += " <- \(describe(inner).summary)"
+            }
+            summary = text
+        } else {
+            let nsError = error as NSError
+            var text = "\(nsError.domain) \(nsError.code)"
+            if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+                text += " <- \(underlying.domain) \(underlying.code)"
+            }
+            summary = text
         }
+        return (summary, summary.hasSuffix(full) ? nil : full)
+    }
+
+    /// An enum payload's error: the payload itself, or the first error among its (possibly labeled) tuple elements.
+    private static func firstError(in payload: Any) -> (any Error)? {
+        if let error = payload as? any Error {
+            return error
+        }
+        return Mirror(reflecting: payload).children.lazy.compactMap { $0.value as? any Error }.first
     }
 }
