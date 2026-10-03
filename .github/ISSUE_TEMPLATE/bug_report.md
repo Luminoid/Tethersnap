@@ -17,7 +17,7 @@ labels: bug
 
 **Log file**
 
-Attach `~/Library/Logs/Tethersnap/Tethersnap.log` (Help → Reveal Log File in Finder), or the output of `tethersnap probe --verbose` for CLI issues. Redact the console serial number if it appears.
+Attach `~/Library/Logs/Tethersnap/Tethersnap.log` (Help → Reveal Log File in Finder), plus `Tethersnap.previous.log` beside it if the problem happened in an earlier run. For CLI issues, attach the output of `tethersnap probe --verbose 2>&1` (the log lines go to stderr). Redact the console serial number and your macOS user name (it appears in file paths) if they appear.
 
 **Environment**
 

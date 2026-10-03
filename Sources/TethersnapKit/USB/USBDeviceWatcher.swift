@@ -33,7 +33,10 @@ public final class USBDeviceWatcher: @unchecked Sendable {
     private var isInvalidated = false
     /// Start watching every supported console ID.
     public init?(handler: @escaping @Sendable (Event) -> Void) {
-        guard let port = IONotificationPortCreate(kIOMainPortDefault) else { return nil }
+        guard let port = IONotificationPortCreate(kIOMainPortDefault) else {
+            TethersnapLog.warning(.usb, "IONotificationPortCreate failed; device watcher unavailable, consoles are found by polling only")
+            return nil
+        }
         self.handler = handler
         notifyPort = port
         IONotificationPortSetDispatchQueue(port, queue)
@@ -43,10 +46,11 @@ public final class USBDeviceWatcher: @unchecked Sendable {
             register(deviceID: deviceID, isArrival: false, type: kIOTerminatedNotification)
         }
         guard !registrations.isEmpty else {
+            TethersnapLog.warning(.usb, "no matching notification registered; device watcher unavailable, consoles are found by polling only")
             IONotificationPortDestroy(port)
             return nil
         }
-        TethersnapLog.info(TethersnapLog.usb, "device watcher armed for \(USBMTPTransport.DeviceID.supported.map(\.name).joined(separator: ", "))")
+        TethersnapLog.info(.usb, "device watcher armed for \(USBMTPTransport.DeviceID.supported.map(\.name).joined(separator: ", "))")
     }
 
     deinit {
@@ -95,7 +99,7 @@ public final class USBDeviceWatcher: @unchecked Sendable {
             notifyPort, type, matching.takeUnretainedValue(), callback, refcon, &iterator
         )
         guard result == KERN_SUCCESS else {
-            TethersnapLog.error(TethersnapLog.usb, "IOServiceAddMatchingNotification(\(type)) failed: \(result)")
+            TethersnapLog.warning(.usb, "IOServiceAddMatchingNotification(\(type)) for \(deviceID.name) failed (\(String(format: "0x%08X", result)))")
             return
         }
         registration.iterator = iterator
@@ -113,7 +117,7 @@ public final class USBDeviceWatcher: @unchecked Sendable {
         }
         guard matched, notify else { return }
         let event: Event = registration.isArrival ? .attached(registration.deviceID) : .removed(registration.deviceID)
-        TethersnapLog.info(TethersnapLog.usb, "\(registration.deviceID.name) \(registration.isArrival ? "attached" : "removed")")
+        TethersnapLog.notice(.usb, "\(registration.deviceID.name) \(registration.isArrival ? "attached" : "removed")")
         handler(event)
     }
 }

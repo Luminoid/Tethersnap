@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import TethersnapKit
 
 @main
 struct TethersnapApp: App {
@@ -50,6 +51,7 @@ struct TethersnapApp: App {
                 Button(L10n.revealLog) {
                     model.revealLogInFinder()
                 }
+                .disabled(model.logFileFailure != nil)
             }
             // After, not replacing: replacing .pasteboard would delete Cut /
             // Copy / Paste / Delete from the Edit menu.
@@ -117,7 +119,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await service.disconnect()
             semaphore.signal()
         }
-        _ = semaphore.wait(timeout: .now() + 2)
+        if semaphore.wait(timeout: .now() + 2) == .timedOut {
+            TethersnapLog.warning(.app, "CloseSession did not finish within 2 s of quit; exiting anyway (process exit releases the USB claim)")
+        }
         return .terminateNow
     }
 }

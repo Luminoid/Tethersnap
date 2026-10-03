@@ -20,6 +20,7 @@ enum L10n {
     static var retry: String { localized("failed.retry") }
     static var statusWaiting: String { localized("status.waiting") }
     static var statusFailed: String { localized("status.failed") }
+    static var logFileUnavailable: String { localized("status.log_unavailable") }
 
     static func statusConnected(_ name: String, _ version: String) -> String {
         String(format: localized("status.connected"), name, version)

@@ -70,9 +70,12 @@ struct LocalizationTests {
 
     /// SPM lowercases lproj directory names (zh-Hans → zh-hans.lproj); locale
     /// matching is case-insensitive, but direct path lookups must tolerate it.
+    /// `resourceURL` covers both bundle layouts: the flat one and the Swift Build
+    /// backend's `Contents/Resources/`.
     private func lprojBundle(_ name: String) throws -> Bundle {
+        let resources = Bundle.module.resourceURL ?? Bundle.module.bundleURL
         for candidate in [name, name.lowercased()] {
-            let url = Bundle.module.bundleURL.appendingPathComponent("\(candidate).lproj")
+            let url = resources.appendingPathComponent("\(candidate).lproj")
             if FileManager.default.fileExists(atPath: url.path), let bundle = Bundle(url: url) {
                 return bundle
             }

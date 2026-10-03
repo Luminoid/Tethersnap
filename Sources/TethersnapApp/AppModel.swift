@@ -12,6 +12,16 @@ final class AppModel {
         case connecting
         case connected
         case failed(String)
+
+        /// The case name alone; `failed`'s message is localized UI text.
+        var logName: String {
+            switch self {
+            case .waiting: "waiting"
+            case .connecting: "connecting"
+            case .connected: "connected"
+            case .failed: "failed"
+            }
+        }
     }
 
     enum Filter: String, CaseIterable, Identifiable {
@@ -129,6 +139,9 @@ final class AppModel {
     /// Last folder an export landed in, if it still exists. Cached: resolving
     /// it hits UserDefaults and the filesystem, which must not run per render.
     private(set) var rememberedExportFolder: URL?
+    /// Why the log file could not be opened this run (shown in the status bar);
+    /// nil while file logging works.
+    private(set) var logFileFailure: String?
     var filter: Filter = .all { didSet { updateFilteredItems() } }
     var sortOrder: SortOrder = .newestFirst { didSet { updateFilteredItems() } }
     var viewMode: ViewMode = AppModel.loadViewMode() {
@@ -159,6 +172,16 @@ final class AppModel {
 
     private static let lastExportFolderKey = "lastExportFolderPath"
     private static let viewModeKey = "viewMode"
+
+    /// `Tethersnap 0.2.0 (2), macOS 26.0.0`: the first line of every run's log.
+    private static var versionHeader: String {
+        let info = Bundle.main.infoDictionary
+        // A bare `swift run TethersnapApp` has no bundle Info.plist.
+        let version = info?["CFBundleShortVersionString"] as? String ?? TethersnapVersion.current
+        let build = info?["CFBundleVersion"] as? String ?? "dev"
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        return "Tethersnap \(version) (\(build)), macOS \(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
+    }
 
     private static func loadViewMode() -> ViewMode {
         UserDefaults.standard.string(forKey: viewModeKey).flatMap(ViewMode.init(rawValue:)) ?? .all
@@ -220,11 +243,20 @@ final class AppModel {
     func start() {
         guard pollTask == nil else { return }
         // Every run leaves a full debug trace on disk (previous run kept), so
-        // bug reports never depend on having had `log stream` running.
-        if let logURL = TethersnapLog.enableFileLogging() {
-            TethersnapLog.info(TethersnapLog.app, "file log at \(logURL.path)")
+        // bug reports never depend on having had `log stream` running. A
+        // failure is already logged; the status bar says so without blocking.
+        // The version header goes first so it opens every run's file.
+        let logURL: URL?
+        do {
+            logURL = try TethersnapLog.enableFileLogging()
+        } catch {
+            logURL = nil
+            logFileFailure = error.localizedDescription
         }
-        TethersnapLog.info(TethersnapLog.app, "app started, watching for consoles")
+        TethersnapLog.notice(.app, "\(Self.versionHeader), watching for consoles")
+        if let logURL {
+            TethersnapLog.info(.app, "file log enabled", private: logURL.path)
+        }
         rememberedExportFolder = Self.loadRememberedFolder()
         // Startup housekeeping off main: reap stale drag folders, then build
         // the watcher (IOKit registration IPC). The bridging Task inside the
@@ -281,6 +313,9 @@ final class AppModel {
             watcher?.invalidate()
             return
         }
+        if watcher == nil {
+            TethersnapLog.warning(.app, "no USB device watcher; relying on the 5 s poll for arrivals and removals")
+        }
         self.watcher = watcher
     }
 
@@ -294,7 +329,7 @@ final class AppModel {
     private func handleUSBEvent(_ event: USBDeviceWatcher.Event) async {
         switch event {
         case let .attached(deviceID):
-            TethersnapLog.info(TethersnapLog.app, "\(deviceID.name) arrival notification")
+            TethersnapLog.info(.app, "\(deviceID.name) arrival notification")
             // A fresh enumeration (replug, or the stale-session USB reset)
             // supersedes an old failure; give the new attach a clean try.
             if case .failed = phase {
@@ -302,7 +337,7 @@ final class AppModel {
             }
             await pollOnce()
         case let .removed(deviceID):
-            TethersnapLog.info(TethersnapLog.app, "\(deviceID.name) removal notification")
+            TethersnapLog.info(.app, "\(deviceID.name) removal notification")
             // Nothing to tear down while waiting; the console may just be
             // re-enumerating (mode switches), so otherwise trust the registry.
             guard phase != .waiting else { return }
@@ -323,6 +358,7 @@ final class AppModel {
     }
 
     func connect() async {
+        TethersnapLog.notice(.app, "connecting (was \(phase.logName))")
         phase = .connecting
         do {
             let device = try await service.connect()
@@ -332,15 +368,16 @@ final class AppModel {
             clearThumbnailCache()
             selection = []
             phase = .connected
-            TethersnapLog.info(TethersnapLog.app, "connected: \(device.name), \(device.items.count) captures")
+            TethersnapLog.notice(.app, "connected: \(device.name) v\(device.firmwareVersion), \(device.items.count) captures")
         } catch {
             await service.disconnect()
-            TethersnapLog.error(TethersnapLog.app, "connect failed: \(error.localizedDescription)")
+            TethersnapLog.error(.app, "connect failed", error: error)
             phase = .failed(error.localizedDescription)
         }
     }
 
     func retry() async {
+        TethersnapLog.notice(.app, "retry requested (was \(phase.logName)); back to waiting")
         phase = .waiting
         await pollOnce()
     }
@@ -365,7 +402,7 @@ final class AppModel {
             items = try await service.reloadItems()
         } catch {
             // Losing the grid silently looks like a wipe; explain and offer Retry.
-            TethersnapLog.error(TethersnapLog.app, "refresh failed: \(error.localizedDescription)")
+            TethersnapLog.error(.app, "refresh failed", error: error)
             await service.disconnect()
             phase = .failed(error.localizedDescription)
         }
@@ -381,7 +418,7 @@ final class AppModel {
         previewItem = nil
         exportSummary = nil
         phase = .waiting
-        TethersnapLog.info(TethersnapLog.app, "back to waiting")
+        TethersnapLog.notice(.app, "back to waiting")
     }
 
     /// Reconnect when a swallowed-looking failure actually killed the session
@@ -389,7 +426,7 @@ final class AppModel {
     private func recoverIfSessionDied() async {
         guard phase == .connected else { return }
         if await !service.isSessionValid() {
-            TethersnapLog.error(TethersnapLog.app, "session invalidated; reconnecting")
+            TethersnapLog.warning(.app, "session invalidated; reconnecting")
             await connect()
         }
     }
@@ -461,12 +498,15 @@ final class AppModel {
                     cacheThumbnail(image, for: item.handle)
                     return image
                 }
+                TethersnapLog.warning(.app, "thumbnail for \(item.filename) did not decode (\(payload.data.count)-byte prefix, then \(full.count) bytes in full)")
+            } else {
+                TethersnapLog.warning(.app, "thumbnail for \(item.filename) did not decode (\(payload.data.count) bytes)")
             }
             return nil
         } catch is CancellationError {
             return nil
         } catch {
-            TethersnapLog.error(TethersnapLog.app, "thumbnail for \(item.filename) failed: \(error.localizedDescription)")
+            TethersnapLog.error(.app, "thumbnail for \(item.filename) failed", error: error)
             await recoverIfSessionDied()
             return nil
         }
@@ -487,7 +527,7 @@ final class AppModel {
             lastPreview = (item.handle, image)
             return image
         } catch {
-            TethersnapLog.error(TethersnapLog.app, "preview for \(item.filename) failed: \(error.localizedDescription)")
+            TethersnapLog.error(.app, "preview for \(item.filename) failed", error: error)
             await recoverIfSessionDied()
             throw error
         }
@@ -541,7 +581,7 @@ final class AppModel {
 
     func export(_ itemsToExport: [CaptureItem], to directory: URL) async {
         guard !itemsToExport.isEmpty, !isExporting else { return }
-        TethersnapLog.info(TethersnapLog.app, "exporting \(itemsToExport.count) items to \(directory.path)")
+        TethersnapLog.notice(.app, "exporting \(itemsToExport.count) items", private: directory.path)
         exportProgress = ExportProgress(completed: 0, total: itemsToExport.count, currentFraction: 0)
         exportSummary = nil
         let token = CancelToken()
@@ -578,6 +618,10 @@ final class AppModel {
             let outcome = try await service.download(itemsToExport, to: directory, cancelToken: token) { completed, fraction in
                 progressContinuation.yield((completed, fraction))
             }
+            TethersnapLog.notice(
+                .app,
+                "export \(outcome.cancelled ? "cancelled" : "finished"): \(outcome.saved) saved, \(outcome.skipped) skipped of \(itemsToExport.count)"
+            )
             if outcome.cancelled {
                 exportSummary = ExportSummary(
                     message: L10n.exportCancelled(outcome.saved),
@@ -593,7 +637,7 @@ final class AppModel {
                 )
             }
         } catch {
-            TethersnapLog.error(TethersnapLog.app, "export failed: \(error.localizedDescription)")
+            TethersnapLog.error(.app, "export failed", error: error)
             exportSummary = ExportSummary(message: L10n.exportFailed(error.localizedDescription), folder: nil)
             // A transfer failure mid-object desynchronizes exactly like a
             // cancel; only a clean device response leaves the session usable.
@@ -614,7 +658,7 @@ final class AppModel {
     }
 
     func cancelExport() {
-        TethersnapLog.info(TethersnapLog.app, "export cancel requested")
+        TethersnapLog.notice(.app, "export cancel requested")
         exportCancelToken?.cancel()
     }
 

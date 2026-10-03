@@ -57,13 +57,20 @@ public final class USBMTPTransport: MTPTransport {
             let service = locateService(for: deviceID)
             if service != IO_OBJECT_NULL {
                 IOObjectRelease(service)
+                // The app polls this every few seconds; log transitions, not every poll.
+                TethersnapLog.resetOnce(discoveryMissKey)
+                TethersnapLog.once(discoveryHitKey, .debug, .usb, "\(deviceID.name) present in the IO registry")
                 return deviceID
             }
         }
-        TethersnapLog.debug(TethersnapLog.usb, "no supported console in the IO registry "
+        TethersnapLog.resetOnce(discoveryHitKey)
+        TethersnapLog.once(discoveryMissKey, .debug, .usb, "no supported console in the IO registry "
             + "(looked for \(DeviceID.supported.map { String(format: "%04x:%04x", $0.vendorID, $0.productID) }.joined(separator: ", ")))")
         return nil
     }
+
+    private static let discoveryHitKey = "usb.discovery.hit"
+    private static let discoveryMissKey = "usb.discovery.miss"
 
     private static func locateService(for deviceID: DeviceID) -> io_service_t {
         let matching = IOUSBHostDevice.__createMatchingDictionary(
@@ -99,6 +106,7 @@ public final class USBMTPTransport: MTPTransport {
         do {
             device = try IOUSBHostDevice(__ioService: service, options: [], queue: nil, interestHandler: nil)
         } catch {
+            TethersnapLog.error(.usb, "opening \(deviceID.name) failed (is another MTP app running?)", error: error)
             throw MTPError.claimFailed("opening the device (is another MTP app running?)", underlying: error)
         }
 
@@ -124,14 +132,20 @@ public final class USBMTPTransport: MTPTransport {
                 bulkOutAddress: candidate.bulkOutAddress,
                 interruptInAddress: candidate.interruptInAddress
             )
-            TethersnapLog.info(TethersnapLog.usb, String(
+            TethersnapLog.notice(.usb, String(
                 format: "claimed %@ (%04x:%04x) interface #%d class 0x%02X, bulk-in 0x%02X bulk-out 0x%02X",
                 deviceID.name, deviceID.vendorID, deviceID.productID,
                 candidate.interfaceNumber, candidate.interfaceClass,
                 candidate.bulkInAddress, candidate.bulkOutAddress
             ))
         } catch {
-            TethersnapLog.error(TethersnapLog.usb, "claim failed for \(deviceID.name): \(error.localizedDescription)")
+            // Log the stage and the IOUSBHost error directly: an error summary does not
+            // reach inside claimFailed's payload, and the IOReturn code is the useful part.
+            if case let MTPError.claimFailed(stage, underlying) = error {
+                TethersnapLog.error(.usb, "claim failed for \(deviceID.name) (stage: \(stage))", error: underlying)
+            } else {
+                TethersnapLog.error(.usb, "claim failed for \(deviceID.name)", error: error)
+            }
             claimedInterface?.destroy()
             device.destroy()
             throw error
@@ -148,7 +162,7 @@ public final class USBMTPTransport: MTPTransport {
         isDestroyed = true
         interface.destroy()
         device.destroy()
-        TethersnapLog.info(TethersnapLog.usb, "released \(deviceID.name)")
+        TethersnapLog.notice(.usb, "released \(deviceID.name)")
     }
 
     // MARK: - MTPTransport
@@ -164,11 +178,11 @@ public final class USBMTPTransport: MTPTransport {
         do {
             try bulkOutPipe.__sendIORequest(with: buffer, bytesTransferred: &transferred, completionTimeout: timeout)
         } catch {
-            TethersnapLog.error(TethersnapLog.usb, "bulk-out failed after \(transferred)/\(data.count) bytes: \(error.localizedDescription)")
+            TethersnapLog.error(.usb, "bulk-out failed after \(transferred)/\(data.count) bytes (timeout \(Int(timeout)) s)", error: error)
             recoverFromStall(after: error)
             throw MTPError.transferFailed(underlying: error)
         }
-        TethersnapLog.debug(TethersnapLog.usb, "bulk-out \(TethersnapLog.hexPreview(data))")
+        TethersnapLog.debug(.usb, "bulk-out \(TethersnapLog.hexPreview(data))")
         guard transferred == data.count else {
             throw MTPError.malformedData("bulk-out wrote \(transferred) of \(data.count) bytes")
         }
@@ -181,12 +195,12 @@ public final class USBMTPTransport: MTPTransport {
         do {
             try bulkInPipe.__sendIORequest(with: buffer, bytesTransferred: &transferred, completionTimeout: timeout)
         } catch {
-            TethersnapLog.error(TethersnapLog.usb, "bulk-in failed (requested \(maxLength)): \(error.localizedDescription)")
+            TethersnapLog.error(.usb, "bulk-in failed after \(transferred)/\(maxLength) bytes (timeout \(Int(timeout)) s)", error: error)
             recoverFromStall(after: error)
             throw MTPError.transferFailed(underlying: error)
         }
         let data = Data(bytes: buffer.bytes, count: transferred)
-        TethersnapLog.debug(TethersnapLog.usb, "bulk-in \(TethersnapLog.hexPreview(data))")
+        TethersnapLog.debug(.usb, "bulk-in \(TethersnapLog.hexPreview(data))")
         return data
     }
 
@@ -204,10 +218,10 @@ public final class USBMTPTransport: MTPTransport {
         var transferred = 0
         do {
             try interface.__send(request, data: nil, bytesTransferred: &transferred, completionTimeout: 5)
-            TethersnapLog.info(TethersnapLog.usb, "sent class Device Reset to \(deviceID.name)")
+            TethersnapLog.notice(.usb, "sent class Device Reset to \(deviceID.name)")
         } catch {
-            TethersnapLog.error(TethersnapLog.usb, "class Device Reset failed "
-                + "(0x\(String(format: "%08X", (error as NSError).code))): \(error.localizedDescription)")
+            // The caller escalates to a USB device reset, so this is a recovery step, not the end.
+            TethersnapLog.warning(.usb, "class Device Reset failed (0x\(String(format: "%08X", (error as NSError).code)))", error: error)
             throw MTPError.transferFailed(underlying: error)
         }
     }
@@ -220,9 +234,9 @@ public final class USBMTPTransport: MTPTransport {
     public func hardReset() {
         do {
             try device.reset()
-            TethersnapLog.info(TethersnapLog.usb, "USB device reset issued; \(deviceID.name) will re-enumerate")
+            TethersnapLog.notice(.usb, "USB device reset issued; \(deviceID.name) will re-enumerate")
         } catch {
-            TethersnapLog.error(TethersnapLog.usb, "USB device reset failed: \(error.localizedDescription)")
+            TethersnapLog.error(.usb, "USB device reset failed", error: error)
         }
         shutdown()
     }
@@ -234,9 +248,18 @@ public final class USBMTPTransport: MTPTransport {
     /// callers reconnect rather than retry blind.
     private func recoverFromStall(after error: Error) {
         guard Self.isPipeStall(error) else { return }
-        TethersnapLog.info(TethersnapLog.usb, "clearing stalled bulk pipes")
-        try? bulkInPipe.clearStall()
-        try? bulkOutPipe.clearStall()
+        TethersnapLog.warning(.usb, "clearing stalled bulk pipes")
+        Self.clearStall(on: bulkInPipe, label: "bulk-in", address: interfaceSummary?.bulkInAddress)
+        Self.clearStall(on: bulkOutPipe, label: "bulk-out", address: interfaceSummary?.bulkOutAddress)
+    }
+
+    private static func clearStall(on pipe: IOUSBHostPipe, label: String, address: Int?) {
+        do {
+            try pipe.clearStall()
+        } catch {
+            let endpoint = address.map { String(format: " 0x%02X", $0) } ?? ""
+            TethersnapLog.warning(.usb, "clearStall on \(label)\(endpoint) failed", error: error)
+        }
     }
 
     /// IOUSBHost reports a STALL handshake as `kUSBHostReturnPipeStalled`
@@ -267,8 +290,12 @@ public final class USBMTPTransport: MTPTransport {
 
     private static func ensureConfigured(_ device: IOUSBHostDevice) throws {
         if device.configurationDescriptor != nil { return }
-        guard let descriptor = try? device.configurationDescriptor(with: 0) else {
-            throw MTPError.claimFailed("reading the configuration descriptor", underlying: nil)
+        let descriptor: UnsafePointer<IOUSBConfigurationDescriptor>
+        do {
+            descriptor = try device.configurationDescriptor(with: 0)
+        } catch {
+            // Logged once, by the init's claim catch, with this stage and the error.
+            throw MTPError.claimFailed("reading the configuration descriptor", underlying: error)
         }
         do {
             try device.__configure(withValue: Int(descriptor.pointee.bConfigurationValue), matchInterfaces: true)
@@ -329,7 +356,7 @@ public final class USBMTPTransport: MTPTransport {
             }
         }
         for candidate in candidates {
-            TethersnapLog.debug(TethersnapLog.usb, String(
+            TethersnapLog.debug(.usb, String(
                 format: "interface candidate #%d class 0x%02X bulk-in 0x%02X bulk-out 0x%02X",
                 candidate.interfaceNumber, candidate.interfaceClass, candidate.bulkInAddress, candidate.bulkOutAddress
             ))

@@ -67,6 +67,7 @@ struct PTPContainerReader {
             let chunk = try readTransfer(maxLength: chunkSize, timeout: timeout)
             if chunk.isEmpty {
                 emptyReads += 1
+                TethersnapLog.debug(.mtp, "zero-length bulk-in read \(emptyReads) with \(count - leftover.count) bytes still expected")
                 guard emptyReads <= 2 else {
                     throw MTPError.malformedData("device stopped sending while \(count - leftover.count) bytes were still expected")
                 }

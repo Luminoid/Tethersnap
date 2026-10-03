@@ -9,6 +9,7 @@
 "status.waiting" = "No console detected on USB";
 "status.connected" = "Connected to %1$@ (v%2$@)";
 "status.failed" = "Connection failed";
+"status.log_unavailable" = "Log file unavailable; logs still go to Console";
 
 /* Filters and sorting */
 "filter.label" = "Filter";

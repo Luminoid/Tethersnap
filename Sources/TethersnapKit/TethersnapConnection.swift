@@ -18,7 +18,7 @@ public final class TethersnapConnection {
         session = MTPSession(transport: transport)
         library = CaptureLibrary(session: session)
         cachedDeviceInfo = try Self.handshake(session: session)
-        TethersnapLog.info(TethersnapLog.mtp, "connected to \(cachedDeviceInfo.model.isEmpty ? deviceID.name : cachedDeviceInfo.model) v\(cachedDeviceInfo.deviceVersion)")
+        TethersnapLog.notice(.mtp, "connected to \(cachedDeviceInfo.model.isEmpty ? deviceID.name : cachedDeviceInfo.model) v\(cachedDeviceInfo.deviceVersion)")
     }
 
     /// Preferred handshake is the spec's: sessionless GetDeviceInfo on
@@ -36,7 +36,7 @@ public final class TethersnapConnection {
             try session.open()
             return info
         } catch let MTPError.deviceResponse(code) {
-            TethersnapLog.info(TethersnapLog.mtp, "sessionless GetDeviceInfo rejected (\(code)); retrying with session-first handshake")
+            TethersnapLog.notice(.mtp, "sessionless GetDeviceInfo rejected (\(code)); retrying with session-first handshake")
         }
         Thread.sleep(forTimeInterval: 0.3)
         try session.open()
@@ -70,7 +70,7 @@ public final class TethersnapConnection {
         do {
             return try connectOnce()
         } catch MTPError.staleSessionReset {
-            TethersnapLog.info(TethersnapLog.mtp, "waiting for the console to re-enumerate after the USB reset")
+            TethersnapLog.notice(.mtp, "waiting for the console to re-enumerate after the USB reset")
             Thread.sleep(forTimeInterval: 3)
             return try connectOnce()
         }

@@ -44,7 +44,7 @@ public final class MTPSession {
             try recoverStaleSession()
         }
         isOpen = true
-        TethersnapLog.info(TethersnapLog.mtp, "session open")
+        TethersnapLog.notice(.mtp, "session open")
     }
 
     /// A stale session survives whatever host process left it behind (a killed
@@ -56,11 +56,11 @@ public final class MTPSession {
     /// needs a valid transaction ID), fall back to the class-specific Device
     /// Reset, then reopen.
     private func recoverStaleSession() throws {
-        TethersnapLog.info(TethersnapLog.mtp, "responder reports a stale session (another MTP app?); closing it and reopening")
+        TethersnapLog.warning(.mtp, "responder reports a stale session (another MTP app?); closing it and reopening")
         do {
             _ = try transaction(.closeSession)
         } catch let MTPError.deviceResponse(code) {
-            TethersnapLog.info(TethersnapLog.mtp, "stale-session CloseSession rejected (\(code)); sending class Device Reset")
+            TethersnapLog.warning(.mtp, "stale-session CloseSession rejected (\(code)); sending class Device Reset")
             do {
                 try transport.deviceReset()
                 Thread.sleep(forTimeInterval: 0.5)
@@ -68,7 +68,7 @@ public final class MTPSession {
                 // The console STALLs the class request (observed fw 22.5.0);
                 // the remaining cure is a USB re-enumeration, after which this
                 // transport is gone and the caller reconnects fresh.
-                TethersnapLog.info(TethersnapLog.mtp, "class Device Reset unavailable; issuing a USB re-enumeration")
+                TethersnapLog.warning(.mtp, "class Device Reset unavailable; issuing a USB re-enumeration", error: error)
                 isValid = false
                 transport.hardReset()
                 throw MTPError.staleSessionReset
@@ -81,14 +81,14 @@ public final class MTPSession {
         guard isOpen else { return }
         defer { isOpen = false }
         guard isValid else {
-            TethersnapLog.info(TethersnapLog.mtp, "session invalidated earlier; skipping CloseSession")
+            TethersnapLog.notice(.mtp, "session invalidated earlier; skipping CloseSession")
             return
         }
         do {
             _ = try transaction(.closeSession)
-            TethersnapLog.info(TethersnapLog.mtp, "session closed")
+            TethersnapLog.notice(.mtp, "session closed")
         } catch {
-            TethersnapLog.info(TethersnapLog.mtp, "CloseSession failed: \(error.localizedDescription)")
+            TethersnapLog.warning(.mtp, "CloseSession failed", error: error)
         }
     }
 
@@ -186,7 +186,7 @@ public final class MTPSession {
             // leaves the responder desynchronized.
             if case MTPError.deviceResponse = error {} else {
                 isValid = false
-                TethersnapLog.error(TethersnapLog.mtp, "session invalidated by \(operation): \(error.localizedDescription)")
+                TethersnapLog.error(.mtp, "session invalidated by \(operation)", error: error)
             }
             throw error
         }
@@ -198,7 +198,7 @@ public final class MTPSession {
         let transactionID = claimTransactionID(for: operation)
         let command = try PTPContainer.command(operation, transactionID: transactionID, parameters: parameters)
         let parameterHex = parameters.map { String(format: "0x%08X", $0) }.joined(separator: " ")
-        TethersnapLog.debug(TethersnapLog.mtp, "→ \(operation) tx \(transactionID) [\(parameterHex)]")
+        TethersnapLog.debug(.mtp, "→ \(operation) tx \(transactionID) [\(parameterHex)]")
         try transport.bulkOut(command, timeout: commandTimeout)
 
         var dataBytes = 0
@@ -225,7 +225,7 @@ public final class MTPSession {
                     throw MTPError.transactionMismatch(expected: transactionID, received: header.transactionID)
                 }
                 let code = PTPResponseCode(rawValue: header.code)
-                TethersnapLog.debug(TethersnapLog.mtp, "← \(code) tx \(transactionID), \(dataBytes) data bytes")
+                TethersnapLog.debug(.mtp, "← \(code) tx \(transactionID), \(dataBytes) data bytes")
                 guard code.isOK else {
                     throw MTPError.deviceResponse(code)
                 }
@@ -236,7 +236,7 @@ public final class MTPSession {
                 guard strayEvents <= Self.maxStrayEventContainers else {
                     throw MTPError.malformedData("more than \(Self.maxStrayEventContainers) stray event containers in one transaction")
                 }
-                TethersnapLog.debug(TethersnapLog.mtp, "ignoring stray event container (code 0x\(String(format: "%04X", header.code)))")
+                TethersnapLog.debug(.mtp, "ignoring stray event container (code 0x\(String(format: "%04X", header.code)))")
                 continue // events belong to the interrupt pipe; ignore strays
             case .command:
                 throw MTPError.malformedData("unexpected command container from device")
