@@ -7,26 +7,32 @@
 
 set -euo pipefail
 
-STAGED=$(git diff --cached --name-only --diff-filter=ACM -- '*.swift')
+# Added, copied, modified, and renamed files, NUL-separated so a path
+# with spaces reaches the tools as one argument.
+staged_swift_files() {
+    git diff --cached --name-only -z --diff-filter=ACMR -- '*.swift'
+}
 
-if [ -z "$STAGED" ]; then
+STAGED_COUNT=$(staged_swift_files | tr -cd '\0' | wc -c | tr -d ' ')
+
+if [ "$STAGED_COUNT" -eq 0 ]; then
     exit 0
 fi
 
-echo "Pre-commit: checking $(echo "$STAGED" | wc -l | tr -d ' ') staged Swift file(s)..."
+echo "Pre-commit: checking $STAGED_COUNT staged Swift file(s)..."
+
+# A missing tool fails the hook: a check that is skipped reads as one that passed.
+for tool in swiftlint swiftformat; do
+    if ! command -v "$tool" &> /dev/null; then
+        echo "error: $tool not found (install: brew install $tool)" >&2
+        exit 1
+    fi
+done
 
 # SwiftLint (lint only, no fix)
-if command -v swiftlint &> /dev/null; then
-    echo "$STAGED" | xargs swiftlint lint --strict --quiet
-else
-    echo "warning: swiftlint not found, skipping lint (install: brew install swiftlint)"
-fi
+staged_swift_files | xargs -0 swiftlint lint --strict --quiet
 
 # SwiftFormat (check only, no modify)
-if command -v swiftformat &> /dev/null; then
-    echo "$STAGED" | xargs swiftformat --lint
-else
-    echo "warning: swiftformat not found, skipping format check (install: brew install swiftformat)"
-fi
+staged_swift_files | xargs -0 swiftformat --lint
 
 echo "Pre-commit: all checks passed."

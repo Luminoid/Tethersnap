@@ -2,8 +2,7 @@
 //  TethersnapLogTests.swift
 //  TethersnapKitTests
 //
-//  Tests for the shared logging core. Identical across Luminoid packages apart
-//  from the type prefix and module name.
+//  Tests for the logging core in TethersnapLog.swift.
 //
 
 import Foundation
