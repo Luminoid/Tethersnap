@@ -199,6 +199,14 @@ public final class CaptureLibrary {
                          cancelToken: CancelToken? = nil,
                          progress: ((Int64, Int64) -> Void)? = nil) throws -> DownloadResult {
         let destination = directory.appendingPathComponent(item.exportFilename)
+        // A degenerate device-reported name ("", ".", "..", or one with a slash)
+        // would resolve the destination to the export folder itself or outside
+        // it, and the replace below would then clobber a directory. Refuse before any I/O.
+        guard Self.isUsableFilename(item.exportFilename),
+              destination.deletingLastPathComponent().standardizedFileURL.path == directory.standardizedFileURL.path else {
+            TethersnapLog.error(.library, "refusing to export an unusable filename", private: item.exportFilename)
+            throw MTPError.malformedData("unusable filename for object 0x\(String(format: "%08X", item.handle))")
+        }
         let fileManager = FileManager.default
         if skipExisting, Self.existingFileMatches(item, at: destination) {
             TethersnapLog.debug(.library, "skipping existing \(item.exportFilename)")
@@ -260,6 +268,11 @@ public final class CaptureLibrary {
         }
         TethersnapLog.info(.library, "downloaded \(item.exportFilename) (\(written) bytes)", private: destination.path)
         return DownloadResult(url: destination, skippedExisting: false)
+    }
+
+    /// A name that can be a single path component inside the export folder.
+    static func isUsableFilename(_ name: String) -> Bool {
+        !name.isEmpty && name != "." && name != ".." && !name.contains("/") && !name.contains("\0")
     }
 
     /// A file only counts as "already exported" when its size matches (the PTP

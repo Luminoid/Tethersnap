@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A device reporting an empty or slash-containing filename could make an export delete the export folder or write outside it; such items are now refused with an error.
+
 ### Changed
 
 - Logging is rebuilt on a shared core with six levels (`debug`, `info`, `notice`, `warning`, `error`, `fault`). Sessions, connects, enumeration, and export outcomes log at `notice`, so they are saved on disk; recoveries (stall clears, the stale-session ladder, the session-first handshake, the flat-query fallback) log at `warning` or `notice`. Errors are logged with their domain and code instead of a localized description, which on a Chinese system came out in Chinese with no code. File paths are private in the unified log.
