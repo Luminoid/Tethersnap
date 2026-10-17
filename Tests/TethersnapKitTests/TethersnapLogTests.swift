@@ -30,6 +30,11 @@ struct TethersnapLogTests {
         var all: [TethersnapLogEntry] {
             entries.withLock { $0 }.filter { $0.category == TethersnapLogTests.category.name }
         }
+
+        /// Appends to this capture, for passing to `withScopedConfiguration` directly.
+        var handler: @Sendable (TethersnapLogEntry) -> Void {
+            { self.append($0) }
+        }
     }
 
     static let category = TethersnapLog.Category("LogCoreTests")
@@ -100,6 +105,52 @@ struct TethersnapLogTests {
             TethersnapLog.debug(Self.category, "trace")
         }
         #expect(entries.map(\.level) == [.debug])
+    }
+
+    @Test
+    func `an async scope records debug lines from its body and child tasks, leaving the process-wide settings alone`() async {
+        let capture = Capture()
+        await TethersnapLog.withScopedConfiguration(minimumLevel: .debug, handler: capture.handler) {
+            #expect(TethersnapLog.minimumLevel == .info)
+            #expect(TethersnapLog.handler == nil)
+            await Task.yield()
+            TethersnapLog.debug(Self.category, "after a suspension")
+            async let child: Void = TethersnapLog.debug(Self.category, "child task")
+            await child
+            let unstructured = Task { TethersnapLog.debug(Self.category, "unstructured task") }
+            await unstructured.value
+        }
+        #expect(capture.all.map(\.message) == ["after a suspension", "child task", "unstructured task"])
+        #expect(!TethersnapLog.isLogging(.debug))
+    }
+
+    @Test
+    func `a task outside an async scope keeps the process-wide settings while the scope is active`() async {
+        let capture = Capture()
+        let outsideWasLoggingDebug = await TethersnapLog.withScopedConfiguration(minimumLevel: .debug, handler: capture.handler) {
+            // A detached task inherits no task-locals: it runs beside the scope, not in it.
+            let outside = Task.detached {
+                TethersnapLog.notice(Self.category, "outside")
+                return TethersnapLog.isLogging(.debug)
+            }
+            let wasLoggingDebug = await outside.value
+            TethersnapLog.debug(Self.category, "inside")
+            return wasLoggingDebug
+        }
+        #expect(!outsideWasLoggingDebug)
+        #expect(capture.all.map(\.message) == ["inside"])
+    }
+
+    @Test
+    func `an async scope stops delivering once it returns`() async {
+        let capture = Capture()
+        await TethersnapLog.withScopedConfiguration(minimumLevel: .debug, handler: capture.handler) {
+            await Task.yield()
+            TethersnapLog.debug(Self.category, "inside")
+        }
+        TethersnapLog.debug(Self.category, "after, below the process-wide threshold")
+        TethersnapLog.notice(Self.category, "after")
+        #expect(capture.all.map(\.message) == ["inside"])
     }
 
     @Test

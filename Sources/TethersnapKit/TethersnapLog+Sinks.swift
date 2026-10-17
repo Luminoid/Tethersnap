@@ -1,21 +1,6 @@
 import Foundation
 import Synchronization
 
-// MARK: - Categories
-
-/// Tethersnap's log categories. The lowercase names are what `log show`/`log stream`
-/// predicates match (`category == "usb"`).
-package extension TethersnapLog.Category {
-    /// IOUSBHost discovery, interface claims, bulk transfers, stall recovery.
-    static let usb = TethersnapLog.Category("usb")
-    /// PTP sessions and transactions.
-    static let mtp = TethersnapLog.Category("mtp")
-    /// Capture enumeration and downloads.
-    static let library = TethersnapLog.Category("library")
-    /// The app's state machine and exports.
-    static let app = TethersnapLog.Category("app")
-}
-
 // MARK: - Local sinks
 
 /// Local mirrors of the log, layered on the core through ``TethersnapLog/handler``:
@@ -65,12 +50,6 @@ public extension TethersnapLog {
             warning(.app, "could not keep the previous run's log", private: url.path, error: rotationError)
         }
         return url
-    }
-
-    /// Stop file logging and close the file.
-    static func disableFileLogging() {
-        LogSinks.shared.closeFile()
-        syncSinkInstallation()
     }
 
     /// Hex dump of a buffer's first bytes, for wire-level traces.

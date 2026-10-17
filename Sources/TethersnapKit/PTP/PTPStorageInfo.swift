@@ -29,6 +29,6 @@ public struct PTPStorageInfo: Sendable {
     public var displayName: String {
         if !volumeLabel.isEmpty { return volumeLabel }
         if !storageDescription.isEmpty { return storageDescription }
-        return Bundle.module.localizedString(forKey: "storage.default", value: nil, table: nil)
+        return KitStrings.localized("storage.default")
     }
 }

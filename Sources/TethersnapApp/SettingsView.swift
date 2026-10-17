@@ -4,7 +4,6 @@ import SwiftUI
 /// first export; ⌘⇧E reuses it). Settings makes it inspectable and clearable.
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
-    @State private var pickerPresented = false
 
     var body: some View {
         Form {
@@ -16,7 +15,11 @@ struct SettingsView: View {
                         .truncationMode(.middle)
                         .help(model.rememberedExportFolder?.path ?? L10n.settingsNoFolder)
                     HStack {
-                        Button(L10n.chooseFolder) { pickerPresented = true }
+                        // The same panel as the export flow (preset to the
+                        // current folder, can create one); fileImporter can do
+                        // neither. Unsandboxed app: the URL is a plain path.
+                        Button(L10n.chooseFolder) { model.chooseRememberedFolder() }
+                            .disabled(model.isPickingFolder)
                         Button(L10n.settingsClear) { model.clearRememberedFolder() }
                             .disabled(model.rememberedExportFolder == nil)
                     }
@@ -25,9 +28,5 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: Layout.settingsWidth)
-        .fileImporter(isPresented: $pickerPresented, allowedContentTypes: [.folder]) { result in
-            guard case let .success(url) = result else { return }
-            model.rememberFolder(url)
-        }
     }
 }

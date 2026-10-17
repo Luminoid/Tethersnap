@@ -1,53 +1,75 @@
-/* Waiting / connection states */
-"waiting.title" = "Waiting for a Switch 2";
-"waiting.connecting" = "Connecting…";
-"waiting.step1" = "Connect the console's BOTTOM USB-C port to this Mac (not through the dock).";
-"waiting.step2" = "On the console: System Settings → Data Management → Manage Screenshots and Videos.";
-"waiting.step3" = "Choose \"Copy to PC via USB\" and keep that screen open.";
-"failed.title" = "Connection failed";
+/* Source states */
+"nosource.title" = "No Source Selected";
+"nosource.message" = "Connect a console or camera over USB, insert a memory card, or choose File › Open Folder…";
+"nosource.hint_switch" = "Nintendo Switch or Switch 2: System Settings → Data Management → Manage Screenshots and Videos → Copy to PC via USB, from the console's bottom USB-C port (not the dock) with a full-data cable.";
+"nosource.hint_camera" = "Camera: choose its PTP or MTP USB mode. If Image Capture opens instead, set \"Connecting this camera opens\" to \"No application\" there.";
+"nosource.hint_drive" = "PS5, PS4, Steam Deck: these have no USB mode for a Mac. Insert the drive or card the console wrote to, or open a folder copied from it.";
+"source.opening" = "Opening %@…";
+"help.cancel_opening" = "Stop waiting for this source and go back to no source";
+"failed.title" = "Could Not Open Source";
 "failed.retry" = "Try Again";
-"status.waiting" = "No console detected on USB";
-"status.connected" = "Connected to %1$@ (v%2$@)";
-"status.failed" = "Connection failed";
+"status.no_source" = "No source selected";
+"status.opening" = "Opening %@…";
+"status.connected" = "Connected to %1$@ (%2$@)";
+"status.showing" = "Showing %@";
+"status.failed" = "Could not open source";
 "status.log_unavailable" = "Log file unavailable; logs still go to Console";
+
+/* Sidebar */
+"sidebar.devices" = "Devices";
+"sidebar.drives" = "Drives";
+"sidebar.folders" = "Folders";
+"sidebar.empty" = "Nothing attached yet";
+"sidebar.remove_folder" = "Remove from Sidebar";
+"menu.open_folder" = "Open Folder…";
+"openfolder.panel_message" = "Choose a folder of photos and videos to show in Tethersnap.";
+"openfolder.panel_prompt" = "Open";
 
 /* Filters and sorting */
 "filter.label" = "Filter";
 "filter.all" = "All";
-"filter.screenshots" = "Screenshots";
+"filter.photos" = "Photos";
 "filter.videos" = "Videos";
+"help.filter" = "Show everything, photos only, or videos only";
 "sort.label" = "Sort";
 "sort.newest" = "Newest First";
 "sort.oldest" = "Oldest First";
 "sort.largest" = "Largest First";
 "help.sort" = "Sort order";
 "view.label" = "View";
-"view.all" = "All Captures";
-"view.by_game" = "Group by Game";
+"view.all" = "All Items";
+"view.by_folder" = "Group by Folder";
+"help.view_mode" = "Show one grid, or a section per folder; exports follow it (one folder, or a subfolder per folder)";
 "group.other" = "Other";
 
 /* Toolbar and menus */
 "toolbar.refresh" = "Refresh";
-"help.refresh" = "Reload the capture list (⌘R)";
+"help.refresh" = "Reload the list (⌘R)";
 "menu.export" = "Export…";
 "menu.export_to" = "Export to \"%@\"";
-"menu.select_all" = "Select All";
 "menu.deselect_all" = "Deselect All";
 "menu.cancel_export" = "Cancel Export";
+"help.cancel_export" = "Stop the export; files saved so far are kept (⌘.)";
 "menu.show_last_export" = "Show Export Folder in Finder";
 "menu.reveal_log" = "Reveal Log File in Finder";
+"menu.fix_dates" = "Fix Dates from Filenames…";
+"help.fix_dates" = "Set photo and video dates from their filenames (⌘⇧D)";
+"menu.cancel_fix_dates" = "Cancel Date Fix";
+"help.cancel_fix_dates" = "Stop the date fix; files updated so far are kept (⌘⌥.)";
 
 /* Empty states */
-"empty.title" = "No Captures";
-"empty.message" = "The console reports no screenshots or videos.";
+"empty.title" = "No Photos or Videos";
+"empty.message" = "This source has no photos or videos.";
 "empty.filter.title" = "No Matches";
 "empty.filter.message" = "Nothing matches the current filter.";
 
 /* Capture cells and preview */
-"kind.screenshot" = "Screenshot";
+"kind.photo" = "Photo";
 "kind.video" = "Video";
+"kind.raw" = "RAW";
 "preview.title" = "Preview";
 "preview.video_hint" = "Videos play after export.";
+"cell.show_in_finder" = "Show in Finder";
 "common.close" = "Close";
 "common.cancel" = "Cancel";
 
@@ -56,23 +78,48 @@
 "export.count" = "Export %lld";
 "export.to_folder" = "To \"%@\"";
 "export.choose_folder" = "Choose Folder…";
-"help.export" = "Save captures to a folder (⌘⇧E)";
+"help.export" = "Save photos and videos to a folder (⌘⇧E)";
 "help.export_remembered" = "Export to \"%@\" (⌘⇧E); use the menu to pick another folder";
+"export.panel_message" = "Choose the folder to save the photos and videos into.";
+"export.panel_message_by_folder" = "Choose the folder to save into. Each source folder becomes a subfolder, as the grid is grouped.";
+"export.panel_prompt" = "Export";
 "export.progress" = "Exporting %1$lld of %2$lld…";
 "export.show_in_finder" = "Show in Finder";
-"export.saved.one" = "Saved %1$lld capture to \"%2$@\"";
-"export.saved.other" = "Saved %1$lld captures to \"%2$@\"";
+"export.saved.one" = "Saved %1$lld item to \"%2$@\"";
+"export.saved.other" = "Saved %1$lld items to \"%2$@\"";
 "export.saved_skipped" = "Saved %1$lld to \"%2$@\" (%3$lld already existed)";
 "export.all_existed" = "%1$lld already in \"%2$@\"; nothing new to save";
 "export.cancelled" = "Export cancelled (%lld saved)";
 "export.failed" = "Export failed: %@";
 
+/* Fix dates from filenames */
+"datefix.title" = "Fix Dates from Filenames";
+"datefix.explainer" = "Reads the timestamp in each filename (console, phone, and screenshot naming patterns), stores it as the capture date, and sets the Finder dates to match. The date is embedded in JPEG, PNG, TIFF, and HEIC photos and in MP4 and MOV videos (re-muxed without re-encoding); RAW, WebP, GIF, BMP, WebM, AVI, and MTS files get Finder dates only.";
+"datefix.folder" = "Folder";
+"datefix.change_folder" = "Change…";
+"datefix.include_subfolders" = "Include subfolders";
+"datefix.overwrite" = "Overwrite existing dates";
+"datefix.overwrite_hint" = "When off, files that already carry a date are left alone.";
+"datefix.run" = "Fix Dates";
+"datefix.panel_message" = "Choose the folder whose photos and videos should get their dates from their filenames.";
+"datefix.panel_prompt" = "Choose";
+"datefix.preparing" = "Scanning the folder…";
+"datefix.progress" = "Fixing dates: %1$lld of %2$lld…";
+"datefix.summary" = "Updated %1$lld of %2$lld files in \"%3$@\"";
+"datefix.summary_detail" = "%1$lld already dated, %2$lld without a date in the name, %3$lld failed";
+"datefix.summary_none" = "Nothing to update in \"%@\"";
+"datefix.cancelled" = "Date fix cancelled (%lld updated)";
+"datefix.failed" = "Date fix failed: %@";
+"datefix.failed_files" = "Could not update: %@";
+
 /* Counts */
-"captures.count.one" = "%lld capture";
-"captures.count.other" = "%lld captures";
+"captures.count.one" = "%lld item";
+"captures.count.other" = "%lld items";
 
 /* Settings and drag-out */
 "settings.export_folder" = "Export folder";
 "settings.no_folder" = "None yet; your first export sets it";
 "settings.clear" = "Clear";
-"drag.folder_name" = "Switch 2 Captures";
+"settings.panel_message" = "Choose the folder that Export (⌘⇧E) saves into.";
+"settings.panel_prompt" = "Choose";
+"drag.folder_name" = "Captures";

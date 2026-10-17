@@ -150,6 +150,22 @@ public nonisolated enum TethersnapLog {
         try $scope.withValue(Scope(minimumLevel: min(minimumLevel, .error), handler: handler), operation: body)
     }
 
+    /// Runs async `body`, on the caller's actor, with a threshold and handler that apply only to the current task and its
+    /// child tasks, leaving the process-wide ``minimumLevel`` and ``handler`` untouched. For tests, which run in parallel
+    /// and share the process-wide settings. The threshold clamps at `.error` like ``minimumLevel``.
+    ///
+    /// Child tasks and `Task {}` started in `body` inherit the configuration (a `Task {}` keeps it after `body` returns);
+    /// `Task.detached` does not.
+    package nonisolated(nonsending) static func withScopedConfiguration<R>(
+        minimumLevel: TethersnapLogLevel,
+        handler: (@Sendable (TethersnapLogEntry) -> Void)?,
+        _ body: nonisolated(nonsending) () async throws -> R
+    ) async rethrows -> R {
+        try await $scope.withValue(Scope(minimumLevel: min(minimumLevel, .error), handler: handler)) {
+            try await body()
+        }
+    }
+
     /// The threshold and handler in effect: the task's scoped configuration, else the process-wide one.
     private static func effectiveConfiguration() -> (minimumLevel: TethersnapLogLevel, handler: (@Sendable (TethersnapLogEntry) -> Void)?) {
         if let scope {

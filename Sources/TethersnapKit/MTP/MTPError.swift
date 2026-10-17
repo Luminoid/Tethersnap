@@ -2,13 +2,17 @@ import Foundation
 
 /// Errors surfaced by the MTP/PTP stack.
 public enum MTPError: Error {
-    /// No USB device matching the vendor/product ID is attached (or it is not in MTP mode).
+    /// No PTP device (still-image class or known console) is attached, or it
+    /// is not in its transfer mode.
     case deviceNotFound
     /// The device was found but claiming it (or its MTP interface) failed.
     case claimFailed(String, underlying: Error?)
+    /// Another process holds exclusive access to the device (macOS's own
+    /// ptpcamerad on behalf of Image Capture or Photos, or a background MTP helper).
+    case deviceBusy(underlying: Error?)
     /// No interface with a bulk-in/bulk-out pipe pair was found in the active configuration.
     case noMTPInterface
-    /// A USB transfer failed (cable pulled, console left the transfer screen, timeout).
+    /// A USB transfer failed (cable pulled, device left its transfer mode, timeout).
     case transferFailed(underlying: Error)
     /// Bytes received from the device do not form a valid PTP container/dataset.
     case malformedData(String)
@@ -19,7 +23,7 @@ public enum MTPError: Error {
     /// An earlier failure left the responder desynchronized; the connection must be rebuilt.
     case sessionInvalidated
     /// A leftover session from another host process could not be cleared
-    /// in-band, so the console was USB-reset (software replug) and is
+    /// in-band, so the device was USB-reset (software replug) and is
     /// re-enumerating; reconnect once it re-attaches.
     case staleSessionReset
 }
@@ -31,6 +35,9 @@ extension MTPError: LocalizedError {
             Self.localized("error.device_not_found")
         case let .claimFailed(stage, underlying):
             String(format: Self.localized("error.claim_failed"), stage)
+                + (underlying.map { " " + String(format: Self.localized("error.underlying"), $0.localizedDescription) } ?? "")
+        case let .deviceBusy(underlying):
+            Self.localized("error.device_busy")
                 + (underlying.map { " " + String(format: Self.localized("error.underlying"), $0.localizedDescription) } ?? "")
         case .noMTPInterface:
             Self.localized("error.no_mtp_interface")
@@ -49,10 +56,7 @@ extension MTPError: LocalizedError {
         }
     }
 
-    /// Table lookup in the package resource bundle (classic .lproj/.strings:
-    /// `swift build` copies string catalogs raw without compiling them, so
-    /// .xcstrings must never be used here).
     private static func localized(_ key: String) -> String {
-        Bundle.module.localizedString(forKey: key, value: nil, table: nil)
+        KitStrings.localized(key)
     }
 }

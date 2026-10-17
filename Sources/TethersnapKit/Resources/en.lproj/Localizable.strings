@@ -1,14 +1,28 @@
 /* MTPError user-facing descriptions */
-"error.device_not_found" = "No Switch 2 in USB-transfer mode was found. Connect the BOTTOM USB-C port (not the dock) and choose System Settings → Data Management → Manage Screenshots and Videos → Copy to PC via USB.";
+"error.device_not_found" = "No console or camera in USB-transfer mode was found. For a Nintendo Switch 2, connect the BOTTOM USB-C port (not the dock) and choose System Settings → Data Management → Manage Screenshots and Videos → Copy to PC via USB. For a camera, select its PTP or MTP USB mode.";
 "error.claim_failed" = "Could not claim the USB device (%@).";
+"error.device_busy" = "Another app holds the device (Image Capture, Photos, or a background helper). Quit it, or in Image Capture set the device's \"Connecting this camera opens\" option to \"No application\", then reconnect.";
 "error.underlying" = "Underlying error: %@";
 "error.no_mtp_interface" = "The device exposes no interface with bulk in/out endpoints (unexpected for MTP mode).";
-"error.transfer_failed" = "USB transfer failed: %@. Check the cable and that the console is still on the Copy to PC screen.";
+"error.transfer_failed" = "USB transfer failed: %@. Check the cable and that the device is still in transfer mode.";
 "error.malformed_data" = "Received malformed PTP data: %@";
-"error.device_response" = "The console rejected the request with response %@.";
+"error.device_response" = "The device rejected the request with response %@.";
 "error.transaction_mismatch" = "PTP transaction mismatch (expected %1$lld, received %2$lld).";
-"error.session_invalidated" = "The connection is out of sync after an earlier failure. Reconnect the console and try again.";
-"error.stale_session_reset" = "Another app left the console connection stuck (a background MTP helper, for example Android File Transfer Agent). Tethersnap reset the USB connection; the console will reconnect in a few seconds.";
+"error.session_invalidated" = "The connection is out of sync after an earlier failure. Reconnect the device and try again.";
+"error.stale_session_reset" = "Another app left the device connection stuck (a background MTP helper, for example Android File Transfer Agent). Tethersnap reset the USB connection; the device will reconnect in a few seconds.";
+
+/* CaptureSourceError user-facing descriptions */
+"error.foreign_item" = "This item does not belong to the open source.";
+"error.source_unavailable" = "The source at \"%@\" is no longer available (unmounted or removed).";
+"error.unreadable_file" = "Could not read \"%1$@\": %2$@";
+"error.no_open_source" = "No source is open.";
+"error.invalid_filename" = "The source reported an unusable filename (\"%@\"); the item was not exported.";
+
+/* DateFixError user-facing descriptions */
+"error.datefix.not_a_folder" = "\"%@\" is not a folder.";
+"error.datefix.image_rewrite" = "Could not rewrite the image metadata: %@";
+"error.datefix.video_session" = "Could not start the video re-mux for this file.";
+"error.datefix.video_container" = "The \"%@\" container cannot be rewritten without re-encoding.";
 
 /* Storage fallback name */
 "storage.default" = "Storage";

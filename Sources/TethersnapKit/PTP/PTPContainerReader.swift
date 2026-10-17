@@ -13,7 +13,11 @@ struct PTPContainerReader {
     /// Streamed data phases (GetObject) may be gigabytes; anything we have to
     /// hold in memory may not.
     static let maxBufferedPayload = 64 * 1024 * 1024
-
+    /// PIMA 15740 container length meaning "unknown, or 4 GiB and more": the
+    /// data phase then ends with a short packet (or a zero-length one) instead.
+    static let unknownLength: UInt32 = 0xFFFF_FFFF
+    /// Consecutive zero-length reads tolerated before the phase counts as dead.
+    private static let maxEmptyReads = 2
     init(transport: MTPTransport, chunkSize: Int, timeout: TimeInterval) {
         self.transport = transport
         self.chunkSize = chunkSize
@@ -30,6 +34,10 @@ struct PTPContainerReader {
         let payloadLength = header.payloadLength
 
         if header.type == .data, let dataSink {
+            if header.length == Self.unknownLength {
+                try streamUnknownLength(into: dataSink)
+                return (header, Data())
+            }
             var remaining = payloadLength
             if !leftover.isEmpty {
                 let take = min(leftover.count, remaining)
@@ -37,8 +45,19 @@ struct PTPContainerReader {
                 leftover.removeFirst(take)
                 remaining -= take
             }
+            var emptyReads = 0
             while remaining > 0 {
                 let chunk = try readTransfer(maxLength: min(chunkSize, roundUpToPacket(remaining)), timeout: timeout)
+                if chunk.isEmpty {
+                    // Same tolerance as `fill`: a responder stuck emitting
+                    // zero-length packets must not spin the caller forever.
+                    emptyReads += 1
+                    guard emptyReads <= Self.maxEmptyReads else {
+                        throw MTPError.malformedData("device stopped sending while \(remaining) data bytes were still expected")
+                    }
+                    continue
+                }
+                emptyReads = 0
                 let take = min(chunk.count, remaining)
                 try dataSink(chunk.prefix(take))
                 if take < chunk.count {
@@ -60,6 +79,30 @@ struct PTPContainerReader {
         return (header, payload)
     }
 
+    /// Data phase of unknown length (4 GiB clips on a camera): the responder
+    /// ends it with a transfer shorter than requested, a zero-length packet
+    /// when the length was a packet multiple. Whatever the header read
+    /// already pulled in belongs to the data; the response container can only
+    /// start in a later transfer because the short packet ends this one.
+    private mutating func streamUnknownLength(into dataSink: (Data) throws -> Void) throws {
+        if !leftover.isEmpty {
+            try dataSink(leftover)
+            leftover.removeAll(keepingCapacity: true)
+        }
+        var total = 0
+        while true {
+            let chunk = try readTransfer(maxLength: chunkSize, timeout: timeout)
+            if !chunk.isEmpty {
+                try dataSink(chunk)
+                total += chunk.count
+            }
+            if chunk.count < chunkSize {
+                TethersnapLog.debug(.mtp, "unknown-length data phase ended after \(total) bytes")
+                return
+            }
+        }
+    }
+
     /// Ensure `leftover` holds at least `count` bytes.
     private mutating func fill(until count: Int, timeout: TimeInterval) throws {
         var emptyReads = 0
@@ -68,7 +111,7 @@ struct PTPContainerReader {
             if chunk.isEmpty {
                 emptyReads += 1
                 TethersnapLog.debug(.mtp, "zero-length bulk-in read \(emptyReads) with \(count - leftover.count) bytes still expected")
-                guard emptyReads <= 2 else {
+                guard emptyReads <= Self.maxEmptyReads else {
                     throw MTPError.malformedData("device stopped sending while \(count - leftover.count) bytes were still expected")
                 }
                 continue // zero-length packet; try again

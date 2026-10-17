@@ -26,7 +26,7 @@ struct TethersnapConnectionTests {
         #expect(second.code == PTPOperationCode.openSession.rawValue)
         #expect(second.transactionID == 0)
         #expect(connection.cachedDeviceInfo.model == "Nintendo Switch 2")
-        #expect(connection.isSessionValid)
+        #expect(connection.isValid)
     }
 
     @Test
@@ -53,7 +53,7 @@ struct TethersnapConnectionTests {
         let connection = try TethersnapConnection(transport: transport, deviceID: .switch2)
 
         #expect(connection.cachedDeviceInfo.model == "Nintendo Switch 2")
-        #expect(connection.isSessionValid)
+        #expect(connection.isValid)
         #expect(transport.written.count == 3)
         let openHeader = try PTPContainerHeader.decode(transport.written[1])
         #expect(openHeader.code == PTPOperationCode.openSession.rawValue)
@@ -89,7 +89,7 @@ struct TethersnapConnectionTests {
         let connection = try TethersnapConnection(transport: transport, deviceID: .switch2)
 
         #expect(connection.cachedDeviceInfo.model == "Nintendo Switch 2")
-        #expect(connection.isSessionValid)
+        #expect(connection.isValid)
         #expect(transport.deviceResetCount == 1)
         let operations = try transport.written.map { try PTPContainerHeader.decode($0).code }
         #expect(operations == [
@@ -99,6 +99,45 @@ struct TethersnapConnectionTests {
             PTPOperationCode.openSession.rawValue,
             PTPOperationCode.getDeviceInfo.rawValue,
         ])
+    }
+
+    @Test
+    func `A connection is a capture source whose descriptor names the model and firmware`() throws {
+        let transport = MockTransport()
+        let deviceID = USBMTPTransport.DeviceID(vendorID: 0x057E, productID: 0x2061, name: "Nintendo Switch 2", locationID: 0x1420_0000)
+        transport.enqueueDataTransaction(
+            operation: PTPOperationCode.getDeviceInfo.rawValue, transactionID: 0,
+            payload: Fixtures.switch2DeviceInfo()
+        )
+        transport.enqueueResponse(code: .ok, transactionID: 0)
+        let connection = try TethersnapConnection(transport: transport, deviceID: deviceID)
+        let source: any CaptureSource = connection
+
+        #expect(source.descriptor.id == deviceID.descriptor.id)
+        #expect(source.descriptor.name == "Nintendo Switch 2")
+        #expect(source.descriptor.detail == "v22.5.0")
+        #expect(source.descriptor.kind == .console)
+        #expect(source.isValid)
+
+        // Enumeration and download go through the protocol unchanged.
+        var storages = PTPDataWriter()
+        storages.appendU32Array([0x0001_0001])
+        transport.enqueueDataTransaction(operation: PTPOperationCode.getStorageIDs.rawValue, transactionID: 1, payload: storages.data)
+        var handles = PTPDataWriter()
+        handles.appendU32Array([0x11])
+        transport.enqueueDataTransaction(operation: PTPOperationCode.getObjectHandles.rawValue, transactionID: 2, payload: handles.data)
+        transport.enqueueDataTransaction(
+            operation: PTPOperationCode.getObjectInfo.rawValue, transactionID: 3,
+            payload: Fixtures.objectInfo(filename: "2026082917051200-CAFE.jpg", size: 2)
+        )
+        let items = try source.loadItems()
+        #expect(items.map(\.filename) == ["2026082917051200-CAFE.jpg"])
+
+        transport.enqueueDataTransaction(operation: PTPOperationCode.getObject.rawValue, transactionID: 4, payload: Data([0xFF, 0xD8]))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tethersnap-source-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let result = try source.download(items[0], to: directory)
+        #expect(try Data(contentsOf: result.url) == Data([0xFF, 0xD8]))
     }
 
     @Test
@@ -135,5 +174,18 @@ struct TethersnapConnectionTests {
 
         let header = try PTPContainerHeader.decode(#require(transport.written.last))
         #expect(header.code == PTPOperationCode.closeSession.rawValue)
+    }
+
+    @Test
+    func `abandon releases a removed device without CloseSession, and close after it sends nothing`() throws {
+        let transport = MockTransport()
+        let connection = try scriptedConnect(transport)
+        let writtenBefore = transport.written.count
+
+        connection.abandon()
+        connection.close()
+
+        #expect(transport.written.count == writtenBefore)
+        #expect(!connection.isValid)
     }
 }

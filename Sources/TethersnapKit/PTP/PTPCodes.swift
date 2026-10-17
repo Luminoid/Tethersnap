@@ -99,6 +99,39 @@ public enum PTPObjectFormat {
     public static func isAssociation(_ format: UInt16) -> Bool {
         format == association
     }
+
+    /// Capture kind from a STANDARD format code, for objects whose filename has
+    /// no usable extension. Image codes are 0x38xx (EXIF/JPEG 0x3801, TIFF,
+    /// PNG, JFIF, …); video codes are the PIMA AVI/MPEG/ASF set plus MTP's
+    /// WMV/MP4/3GP. Vendor codes (0xB1xx) are deliberately nil: Canon CRW
+    /// and Sony RAW reuse the same values.
+    public static func captureKind(_ format: UInt16) -> CaptureItem.Kind? {
+        switch format {
+        case 0x3800 ... 0x38FF: .image
+        case 0x300A, 0x300B, 0x300C, 0x300D, 0xB981, 0xB982, 0xB984: .video
+        default: nil
+        }
+    }
+
+    /// A file extension for a standard object format, used to name an object
+    /// whose reported filename is unusable; nil for formats with no
+    /// conventional extension.
+    public static func preferredExtension(_ format: UInt16) -> String? {
+        switch format {
+        case 0x3801, 0x3808: "jpg"
+        case 0x3802, 0x380D: "tif"
+        case 0x3804: "bmp"
+        case 0x3807: "gif"
+        case 0x380B: "png"
+        case 0x300A: "avi"
+        case 0x300B: "mpg"
+        case 0x300D: "mov"
+        case 0xB981: "wmv"
+        case 0xB982: "mp4"
+        case 0xB984: "3gp"
+        default: nil
+        }
+    }
 }
 
 /// Well-known wildcard parameters for GetObjectHandles.

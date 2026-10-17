@@ -2,23 +2,33 @@ import Foundation
 import IOKit
 import IOUSBHost
 
-/// `MTPTransport` over IOUSBHost: finds the console, claims its MTP interface,
-/// and drives the bulk pipes synchronously.
+/// `MTPTransport` over IOUSBHost: finds a PTP device, claims its still-image
+/// (or vendor-specific) interface, and drives the bulk pipes synchronously.
 ///
 /// macOS has no MTP kernel driver, so the device service is unclaimed and a
 /// user-space client can take exclusive ownership without entitlements
 /// (outside the App Sandbox).
 public final class USBMTPTransport: MTPTransport {
-    /// USB identity of a supported console.
-    public struct DeviceID: Sendable {
+    /// USB identity of an attached PTP device (or a table entry for a known console).
+    public struct DeviceID: Sendable, Hashable {
         public let vendorID: UInt16
         public let productID: UInt16
         public let name: String
+        /// The device's `locationID` registry property: its position in the USB
+        /// topology, stable per port and across a USB reset. nil only in the
+        /// static table; every discovered ID carries one.
+        public let locationID: UInt32?
+        public let serialNumber: String?
+        public let kind: CaptureSourceDescriptor.Kind
 
-        public init(vendorID: UInt16, productID: UInt16, name: String) {
+        public init(vendorID: UInt16, productID: UInt16, name: String,
+                    locationID: UInt32? = nil, serialNumber: String? = nil, kind: CaptureSourceDescriptor.Kind = .console) {
             self.vendorID = vendorID
             self.productID = productID
             self.name = name
+            self.locationID = locationID
+            self.serialNumber = serialNumber
+            self.kind = kind
         }
 
         /// Nintendo Switch 2 in Copy-to-PC mode (057e:2061).
@@ -26,7 +36,30 @@ public final class USBMTPTransport: MTPTransport {
         /// Original Nintendo Switch / Switch Lite (057e:201d), same protocol.
         public static let switch1 = Self(vendorID: 0x057E, productID: 0x201D, name: "Nintendo Switch")
 
+        /// Consoles known by vendor/product ID. They are also found by their
+        /// still-image interface; the table supplies the friendly name, the
+        /// console kind, and discovery before the interface nub exists.
         public static let supported: [Self] = [.switch2, .switch1]
+
+        /// The table entry for a vendor/product pair, nil for anything else.
+        public static func known(vendorID: UInt16, productID: UInt16) -> Self? {
+            supported.first { $0.vendorID == vendorID && $0.productID == productID }
+        }
+
+        /// `vvvv:pppp`, for logs, ids, and the pre-connect detail line.
+        public var hexPair: String {
+            String(format: "%04x:%04x", vendorID, productID)
+        }
+
+        public var descriptor: CaptureSourceDescriptor {
+            CaptureSourceDescriptor(
+                id: "usb:\(String(format: "%08x", locationID ?? 0)):\(hexPair)",
+                name: name,
+                kind: kind,
+                detail: hexPair,
+                location: .usb(self)
+            )
+        }
     }
 
     /// Descriptor summary of the claimed interface, for `tethersnap probe`.
@@ -51,63 +84,73 @@ public final class USBMTPTransport: MTPTransport {
 
     // MARK: - Discovery
 
-    /// Whether a supported console is currently attached in MTP mode.
-    public static func attachedDeviceID() -> DeviceID? {
-        for deviceID in DeviceID.supported {
-            let service = locateService(for: deviceID)
-            if service != IO_OBJECT_NULL {
-                IOObjectRelease(service)
-                // The app polls this every few seconds; log transitions, not every poll.
-                TethersnapLog.resetOnce(discoveryMissKey)
-                TethersnapLog.once(discoveryHitKey, .debug, .usb, "\(deviceID.name) present in the IO registry")
-                return deviceID
+    /// Every attached PTP device: still-image-class (0x06) interfaces, which
+    /// cover cameras, phones, and both Switches, unioned with the known console
+    /// IDs at device level (a console can sit unconfigured with no interface
+    /// nub yet). Consoles first, then by USB location.
+    public static func attachedDevices() -> [DeviceID] {
+        var found: [DeviceID] = []
+        var seenLocations = Set<UInt32>()
+        func add(_ id: DeviceID) {
+            guard let location = id.locationID, seenLocations.insert(location).inserted else { return }
+            found.append(id)
+        }
+        forEachService(matching: stillImageInterfaceMatching()) { service in
+            if let id = deviceID(forService: service) { add(id) }
+        }
+        for known in DeviceID.supported {
+            forEachService(matching: deviceMatching(vendorID: known.vendorID, productID: known.productID)) { service in
+                if let id = deviceID(forService: service) { add(id) }
             }
         }
-        TethersnapLog.resetOnce(discoveryHitKey)
-        TethersnapLog.once(discoveryMissKey, .debug, .usb, "no supported console in the IO registry "
-            + "(looked for \(DeviceID.supported.map { String(format: "%04x:%04x", $0.vendorID, $0.productID) }.joined(separator: ", ")))")
-        return nil
+        found.sort { lhs, rhs in
+            if (lhs.kind == .console) != (rhs.kind == .console) { return lhs.kind == .console }
+            return (lhs.locationID ?? 0) < (rhs.locationID ?? 0)
+        }
+        // The app polls this every few seconds; log transitions, not every poll.
+        if found.isEmpty {
+            TethersnapLog.resetOnce(discoveryHitKey)
+            TethersnapLog.once(discoveryMissKey, .debug, .usb, "no PTP device in the IO registry")
+        } else {
+            TethersnapLog.resetOnce(discoveryMissKey)
+            TethersnapLog.once(discoveryHitKey, .debug, .usb, "present in the IO registry: \(found.map { "\($0.name) (\($0.hexPair))" }.joined(separator: ", "))")
+        }
+        return found
     }
 
     private static let discoveryHitKey = "usb.discovery.hit"
     private static let discoveryMissKey = "usb.discovery.miss"
 
+    /// The device service for `deviceID`: among the vendor/product matches, the
+    /// one at its USB location (two identical cameras stay distinct), or the
+    /// first when the ID is a bare table entry. Returned retained (+1).
     private static func locateService(for deviceID: DeviceID) -> io_service_t {
-        let matching = IOUSBHostDevice.__createMatchingDictionary(
-            withVendorID: NSNumber(value: deviceID.vendorID),
-            productID: NSNumber(value: deviceID.productID),
-            bcdDevice: nil,
-            deviceClass: nil,
-            deviceSubclass: nil,
-            deviceProtocol: nil,
-            speed: nil,
-            productIDArray: nil
-        )
-        // IOServiceGetMatchingService consumes the dictionary's +1 reference.
-        return IOServiceGetMatchingService(kIOMainPortDefault, matching.takeUnretainedValue())
+        var match: io_service_t = IO_OBJECT_NULL
+        forEachService(matching: deviceMatching(vendorID: deviceID.vendorID, productID: deviceID.productID)) { service in
+            guard match == IO_OBJECT_NULL else { return }
+            if let wanted = deviceID.locationID, registryUInt32(service, RegistryKey.locationID) != wanted { return }
+            IOObjectRetain(service)
+            match = service
+        }
+        return match
     }
 
     // MARK: - Init / teardown
-
-    /// Find and claim the first attached supported console.
-    public convenience init() throws {
-        guard let found = Self.attachedDeviceID() else {
-            throw MTPError.deviceNotFound
-        }
-        try self.init(deviceID: found)
-    }
 
     public init(deviceID: DeviceID) throws {
         self.deviceID = deviceID
 
         let service = Self.locateService(for: deviceID)
         guard service != IO_OBJECT_NULL else { throw MTPError.deviceNotFound }
+        // `locateService` hands back a +1 reference; the IOUSBHost object keeps
+        // its own, so ours is released whether or not the open succeeds.
+        defer { IOObjectRelease(service) }
 
         do {
-            device = try IOUSBHostDevice(__ioService: service, options: [], queue: nil, interestHandler: nil)
+            device = try Self.openDevice(service, deviceID: deviceID)
         } catch {
-            TethersnapLog.error(.usb, "opening \(deviceID.name) failed (is another MTP app running?)", error: error)
-            throw MTPError.claimFailed("opening the device (is another MTP app running?)", underlying: error)
+            TethersnapLog.error(.usb, "opening \(deviceID.name) failed", error: error)
+            throw error
         }
 
         // A throwing class init skips deinit, so the catch below must tear down
@@ -117,7 +160,7 @@ public final class USBMTPTransport: MTPTransport {
         do {
             try Self.ensureConfigured(device)
             let candidate = try Self.findMTPInterface(in: device)
-            let claimed = try Self.claimInterface(deviceID: deviceID, candidate: candidate)
+            let claimed = try Self.claimInterface(on: device, candidate: candidate)
             claimedInterface = claimed
             let pipes = try Self.openPipes(on: claimed, candidate: candidate)
             interface = claimed
@@ -199,7 +242,8 @@ public final class USBMTPTransport: MTPTransport {
             recoverFromStall(after: error)
             throw MTPError.transferFailed(underlying: error)
         }
-        let data = Data(bytes: buffer.bytes, count: transferred)
+        // Clamped so an over-reported transfer count can never read past the buffer.
+        let data = Data(bytes: buffer.bytes, count: min(transferred, maxLength))
         TethersnapLog.debug(.usb, "bulk-in \(TethersnapLog.hexPreview(data))")
         return data
     }
@@ -227,10 +271,10 @@ public final class USBMTPTransport: MTPTransport {
     }
 
     /// USB device reset: terminates this device object kernel-side and
-    /// re-enumerates the console, a software replug. The only reliable cure
+    /// re-enumerates the device, a software replug. The only reliable cure
     /// for a stale session on the Switch 2, which STALLs the class Device
     /// Reset (observed fw 22.5.0). This transport is dead afterwards; the
-    /// console re-attaches fresh and the caller reconnects.
+    /// device re-attaches fresh and the caller reconnects.
     public func hardReset() {
         do {
             try device.reset()
@@ -279,7 +323,6 @@ public final class USBMTPTransport: MTPTransport {
 
     private struct InterfaceCandidate {
         let interfaceNumber: Int
-        let configurationValue: Int
         let interfaceClass: Int
         let interfaceSubclass: Int
         let interfaceProtocol: Int
@@ -342,7 +385,6 @@ public final class USBMTPTransport: MTPTransport {
             if let bulkIn, let bulkOut {
                 candidates.append(InterfaceCandidate(
                     interfaceNumber: Int(interfaceDescriptor.pointee.bInterfaceNumber),
-                    configurationValue: Int(configuration.pointee.bConfigurationValue),
                     interfaceClass: Int(interfaceDescriptor.pointee.bInterfaceClass),
                     interfaceSubclass: Int(interfaceDescriptor.pointee.bInterfaceSubClass),
                     interfaceProtocol: Int(interfaceDescriptor.pointee.bInterfaceProtocol),
@@ -368,25 +410,42 @@ public final class USBMTPTransport: MTPTransport {
         return best
     }
 
-    /// Interfaces register asynchronously after configuration, so poll briefly.
-    private static func claimInterface(deviceID: DeviceID, candidate: InterfaceCandidate) throws -> IOUSBHostInterface {
-        let deadline = Date().addingTimeInterval(5)
+    /// How long a claim keeps retrying: interfaces register asynchronously
+    /// after configuration, and a holder of exclusive access (ptpcamerad on
+    /// behalf of Image Capture or Photos) may let go within a few seconds.
+    private static let claimDeadline: TimeInterval = 5
+
+    /// Open the device service, retrying while another client holds
+    /// exclusive access; past the deadline that becomes `deviceBusy`.
+    private static func openDevice(_ service: io_service_t, deviceID: DeviceID) throws -> IOUSBHostDevice {
+        let deadline = Date().addingTimeInterval(claimDeadline)
         var lastError: Error?
         repeat {
-            let matching = IOUSBHostInterface.__createMatchingDictionary(
-                withVendorID: NSNumber(value: deviceID.vendorID),
-                productID: NSNumber(value: deviceID.productID),
-                bcdDevice: nil,
-                interfaceNumber: NSNumber(value: candidate.interfaceNumber),
-                configurationValue: NSNumber(value: candidate.configurationValue),
-                interfaceClass: nil,
-                interfaceSubclass: nil,
-                interfaceProtocol: nil,
-                speed: nil,
-                productIDArray: nil
-            )
-            let service = IOServiceGetMatchingService(kIOMainPortDefault, matching.takeUnretainedValue())
-            if service != IO_OBJECT_NULL {
+            do {
+                return try IOUSBHostDevice(__ioService: service, options: [], queue: nil, interestHandler: nil)
+            } catch {
+                lastError = error
+                guard isExclusiveAccess(error) else { break }
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+        } while Date() < deadline
+        if let lastError, isExclusiveAccess(lastError) {
+            throw MTPError.deviceBusy(underlying: lastError)
+        }
+        throw MTPError.claimFailed("opening the device (is another MTP app running?)", underlying: lastError)
+    }
+
+    /// Claim the candidate interface among the opened device's own children
+    /// (never a bus-wide vendor/product match: two identical cameras would be
+    /// ambiguous), polling until the deadline.
+    private static func claimInterface(on device: IOUSBHostDevice, candidate: InterfaceCandidate) throws -> IOUSBHostInterface {
+        let deadline = Date().addingTimeInterval(claimDeadline)
+        var lastError: Error?
+        repeat {
+            if let service = interfaceService(of: device, interfaceNumber: candidate.interfaceNumber) {
+                // The child iterator handed back a +1 reference; release it on
+                // every path, or a 5 s busy wait leaks fifty port rights.
+                defer { IOObjectRelease(service) }
                 do {
                     return try IOUSBHostInterface(__ioService: service, options: [], queue: nil, interestHandler: nil)
                 } catch {
@@ -395,7 +454,139 @@ public final class USBMTPTransport: MTPTransport {
             }
             Thread.sleep(forTimeInterval: 0.1)
         } while Date() < deadline
+        if let lastError, isExclusiveAccess(lastError) {
+            throw MTPError.deviceBusy(underlying: lastError)
+        }
         throw MTPError.claimFailed("claiming interface \(candidate.interfaceNumber)", underlying: lastError)
+    }
+
+    /// The device's child `IOUSBHostInterface` with `bInterfaceNumber ==
+    /// interfaceNumber`, retained (+1), or nil while it has not registered yet.
+    /// Other children (user clients of other processes) are skipped by class.
+    private static func interfaceService(of device: IOUSBHostDevice, interfaceNumber: Int) -> io_service_t? {
+        var iterator: io_iterator_t = IO_OBJECT_NULL
+        guard IORegistryEntryGetChildIterator(device.ioService, kIOServicePlane, &iterator) == KERN_SUCCESS else { return nil }
+        defer { IOObjectRelease(iterator) }
+        while case let child = IOIteratorNext(iterator), child != IO_OBJECT_NULL {
+            if IOObjectConformsTo(child, RegistryKey.interfaceClassName) != 0,
+               registryUInt32(child, RegistryKey.interfaceNumber) == UInt32(interfaceNumber) {
+                return child
+            }
+            IOObjectRelease(child)
+        }
+        return nil
+    }
+
+    /// `kIOReturnExclusiveAccess` (0xe00002c5): another client owns the
+    /// device or interface. Sign-tolerant like `isPipeStall`.
+    static func isExclusiveAccess(_ error: Error) -> Bool {
+        Int32(truncatingIfNeeded: (error as NSError).code) == Int32(bitPattern: 0xE000_02C5)
+    }
+
+    // MARK: - IO registry
+
+    /// Registry property names (IOUSBHostFamilyDefinitions.h; the string
+    /// descriptors keep their legacy `kUSB…String` names as property keys).
+    enum RegistryKey {
+        static let vendorID = "idVendor"
+        static let productID = "idProduct"
+        static let locationID = "locationID"
+        static let interfaceNumber = "bInterfaceNumber"
+        static let productString = "kUSBProductString"
+        static let vendorString = "kUSBVendorString"
+        static let serialNumberString = "kUSBSerialNumberString"
+        static let interfaceClassName = "IOUSBHostInterface"
+        /// USB still-image class: PTP responders (PIMA 15740 / MTP).
+        static let stillImageClass = 6
+        /// Apple's vendor ID: iPhones and iPads expose a PTP interface too.
+        static let appleVendorID: UInt16 = 0x05AC
+    }
+
+    /// Matching dictionary for every still-image-class interface on the bus.
+    /// Each IOKit call that takes one consumes its +1 reference, so callers
+    /// create a fresh dictionary per call.
+    static func stillImageInterfaceMatching() -> Unmanaged<CFMutableDictionary> {
+        IOUSBHostInterface.__createMatchingDictionary(
+            withVendorID: nil,
+            productID: nil,
+            bcdDevice: nil,
+            interfaceNumber: nil,
+            configurationValue: nil,
+            interfaceClass: NSNumber(value: RegistryKey.stillImageClass),
+            interfaceSubclass: nil,
+            interfaceProtocol: nil,
+            speed: nil,
+            productIDArray: nil
+        )
+    }
+
+    /// Matching dictionary for a device by vendor/product ID.
+    static func deviceMatching(vendorID: UInt16, productID: UInt16) -> Unmanaged<CFMutableDictionary> {
+        IOUSBHostDevice.__createMatchingDictionary(
+            withVendorID: NSNumber(value: vendorID),
+            productID: NSNumber(value: productID),
+            bcdDevice: nil,
+            deviceClass: nil,
+            deviceSubclass: nil,
+            deviceProtocol: nil,
+            speed: nil,
+            productIDArray: nil
+        )
+    }
+
+    /// Run `body` on every service matching `dictionary` (consumed), each
+    /// released after the call; `body` retains what it wants to keep.
+    private static func forEachService(matching dictionary: Unmanaged<CFMutableDictionary>, _ body: (io_service_t) -> Void) {
+        var iterator: io_iterator_t = IO_OBJECT_NULL
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, dictionary.takeUnretainedValue(), &iterator) == KERN_SUCCESS else { return }
+        defer { IOObjectRelease(iterator) }
+        while case let service = IOIteratorNext(iterator), service != IO_OBJECT_NULL {
+            body(service)
+            IOObjectRelease(service)
+        }
+    }
+
+    /// The identity of a device or interface service: an interface resolves
+    /// to its parent device. Known consoles get their table name and kind;
+    /// anything else is named by its product string and is a camera unless
+    /// Apple made it.
+    static func deviceID(forService service: io_service_t) -> DeviceID? {
+        var deviceService = service
+        var parent: io_registry_entry_t = IO_OBJECT_NULL
+        if IOObjectConformsTo(service, RegistryKey.interfaceClassName) != 0 {
+            guard IORegistryEntryGetParentEntry(service, kIOServicePlane, &parent) == KERN_SUCCESS else { return nil }
+            deviceService = parent
+        }
+        defer { if parent != IO_OBJECT_NULL { IOObjectRelease(parent) } }
+
+        guard let vendor = registryUInt32(deviceService, RegistryKey.vendorID),
+              let product = registryUInt32(deviceService, RegistryKey.productID) else { return nil }
+        let vendorID = UInt16(truncatingIfNeeded: vendor)
+        let productID = UInt16(truncatingIfNeeded: product)
+        let locationID = registryUInt32(deviceService, RegistryKey.locationID)
+        let serial = registryString(deviceService, RegistryKey.serialNumberString)
+        if let known = DeviceID.known(vendorID: vendorID, productID: productID) {
+            return DeviceID(vendorID: vendorID, productID: productID, name: known.name,
+                            locationID: locationID, serialNumber: serial, kind: known.kind)
+        }
+        let name = registryString(deviceService, RegistryKey.productString)
+            ?? registryString(deviceService, RegistryKey.vendorString).map { "\($0) \(String(format: "%04x:%04x", vendorID, productID))" }
+            ?? String(format: "PTP device %04x:%04x", vendorID, productID)
+        return DeviceID(vendorID: vendorID, productID: productID, name: name,
+                        locationID: locationID, serialNumber: serial,
+                        kind: vendorID == RegistryKey.appleVendorID ? .ptpDevice : .camera)
+    }
+
+    private static func registryUInt32(_ entry: io_registry_entry_t, _ key: String) -> UInt32? {
+        guard let value = IORegistryEntryCreateCFProperty(entry, key as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue(),
+              let number = value as? NSNumber else { return nil }
+        return UInt32(truncatingIfNeeded: number.int64Value)
+    }
+
+    private static func registryString(_ entry: io_registry_entry_t, _ key: String) -> String? {
+        guard let value = IORegistryEntryCreateCFProperty(entry, key as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue(),
+              let string = value as? String, !string.isEmpty else { return nil }
+        return string
     }
 
     private static func openPipes(on interface: IOUSBHostInterface,

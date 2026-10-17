@@ -92,6 +92,17 @@ public final class MTPSession {
         }
     }
 
+    /// Drop the session without a CloseSession round trip, for a responder the
+    /// system already reported gone (a USB unplug): the transfer could only
+    /// fail, or block until its timeout, and would log as an error either way.
+    /// A later `close()` is a no-op.
+    public func abandon() {
+        guard isOpen else { return }
+        isOpen = false
+        isValid = false
+        TethersnapLog.notice(.mtp, "device detached; session dropped without CloseSession")
+    }
+
     // MARK: - Operations
 
     /// GetDeviceInfo works outside a session and always uses transaction ID 0.
@@ -186,7 +197,12 @@ public final class MTPSession {
             // leaves the responder desynchronized.
             if case MTPError.deviceResponse = error {} else {
                 isValid = false
-                TethersnapLog.error(.mtp, "session invalidated by \(operation)", error: error)
+                if error is CancellationError {
+                    // A user cancel is expected to desynchronize; the caller reconnects.
+                    TethersnapLog.notice(.mtp, "session invalidated by a cancelled \(operation); reconnect before the next transaction")
+                } else {
+                    TethersnapLog.error(.mtp, "session invalidated by \(operation)", error: error)
+                }
             }
             throw error
         }
@@ -197,8 +213,8 @@ public final class MTPSession {
                                     dataSink: ((Data) throws -> Void)?) throws -> TransactionResult {
         let transactionID = claimTransactionID(for: operation)
         let command = try PTPContainer.command(operation, transactionID: transactionID, parameters: parameters)
-        let parameterHex = parameters.map { String(format: "0x%08X", $0) }.joined(separator: " ")
-        TethersnapLog.debug(.mtp, "→ \(operation) tx \(transactionID) [\(parameterHex)]")
+        // Formatted inside the autoclosure: thousands of GetObjectInfo per enumeration.
+        TethersnapLog.debug(.mtp, "→ \(operation) tx \(transactionID) [\(parameters.map { String(format: "0x%08X", $0) }.joined(separator: " "))]")
         try transport.bulkOut(command, timeout: commandTimeout)
 
         var dataBytes = 0

@@ -1,4 +1,5 @@
 import CoreGraphics
+import SwiftUI
 
 /// Minimal token set (4pt grid); LumiKit is UIKit-only, so the Mac app keeps
 /// its own small palette instead of magic numbers.
@@ -11,6 +12,8 @@ enum Layout {
     static let spacingXL: CGFloat = 20
 
     static let thumbnailSide: CGFloat = 200
+    /// Cell placeholder shape; console captures are 16:9, camera frames letterbox into it.
+    static let thumbnailAspectRatio: CGFloat = 16 / 9
     static let cornerRadius: CGFloat = 8
     static let selectionLineWidth: CGFloat = 3
     static let hoverLineWidth: CGFloat = 1
@@ -36,7 +39,24 @@ enum Layout {
     static let progressBarWidth: CGFloat = 240
     static let previewMinWidth: CGFloat = 640
     static let previewMinHeight: CGFloat = 360
-    static let windowMinWidth: CGFloat = 720
+    static let windowMinWidth: CGFloat = 820
     static let windowMinHeight: CGFloat = 480
+    static let windowDefaultSize = CGSize(width: 1040, height: 680)
     static let settingsWidth: CGFloat = 440
+    static let sheetWidth: CGFloat = 440
+    static let sidebarMinWidth: CGFloat = 200
+    static let sidebarIdealWidth: CGFloat = 220
+
+    // MARK: - Colors
+
+    /// Failure icons (open failed, preview failed): a warning, not an error red,
+    /// because Retry is one click away.
+    static let warningColor: Color = .orange
+    /// Glyphs drawn over a thumbnail (video badge, selection checkmark).
+    static let overlayGlyphColor: Color = .white
+    /// Status dot per phase.
+    static let statusIdleColor: Color = .gray
+    static let statusBusyColor: Color = .orange
+    static let statusReadyColor: Color = .green
+    static let statusFailedColor: Color = .red
 }

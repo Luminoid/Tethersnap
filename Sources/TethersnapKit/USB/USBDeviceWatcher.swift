@@ -1,12 +1,18 @@
 import Foundation
 import IOKit
-import IOUSBHost
 
-/// Push notifications for console arrival/removal via IOKit matching
+/// Push notifications for PTP device arrival/removal via IOKit matching
 /// notifications, so the app reacts immediately instead of only on a poll.
 ///
+/// Watches every still-image-class interface (cameras, phones, both Switches)
+/// plus the known console IDs at device level, so a console is seen before
+/// its interface nub registers. A device that matches more than once (its
+/// interface and, for a console, the device itself) is reported once per
+/// USB location.
+///
 /// Events are delivered on an internal serial queue; the handler must be
-/// `@Sendable` and hop to wherever it needs to go.
+/// `@Sendable` and hop to wherever it needs to go. Call `invalidate()` before
+/// letting the last reference go: it fences the callback queue.
 public final class USBDeviceWatcher: @unchecked Sendable {
     public enum Event: Sendable {
         case attached(USBMTPTransport.DeviceID)
@@ -14,14 +20,14 @@ public final class USBDeviceWatcher: @unchecked Sendable {
     }
 
     private final class Registration {
-        unowned let watcher: USBDeviceWatcher
-        let deviceID: USBMTPTransport.DeviceID
+        /// Weak: a callback racing the watcher's release must find nil, not a
+        /// dangling reference.
+        weak var watcher: USBDeviceWatcher?
         let isArrival: Bool
         var iterator: io_iterator_t = IO_OBJECT_NULL
 
-        init(watcher: USBDeviceWatcher, deviceID: USBMTPTransport.DeviceID, isArrival: Bool) {
+        init(watcher: USBDeviceWatcher, isArrival: Bool) {
             self.watcher = watcher
-            self.deviceID = deviceID
             self.isArrival = isArrival
         }
     }
@@ -31,26 +37,42 @@ public final class USBDeviceWatcher: @unchecked Sendable {
     private let notifyPort: IONotificationPortRef
     private var registrations: [Registration] = []
     private var isInvalidated = false
-    /// Start watching every supported console ID.
+    /// Live registry entries per USB location, so the second match for one
+    /// device adds no event and removal fires when the last entry goes.
+    private var entriesByLocation: [UInt32: Set<UInt64>] = [:]
+    /// Identity captured at arrival: a terminated service's properties are
+    /// not reliably readable any more.
+    private var deviceByEntry: [UInt64: USBMTPTransport.DeviceID] = [:]
+
+    /// Start watching still-image interfaces and every known console ID.
     public init?(handler: @escaping @Sendable (Event) -> Void) {
         guard let port = IONotificationPortCreate(kIOMainPortDefault) else {
-            TethersnapLog.warning(.usb, "IONotificationPortCreate failed; device watcher unavailable, consoles are found by polling only")
+            TethersnapLog.warning(.usb, "IONotificationPortCreate failed; device watcher unavailable, devices are found by polling only")
             return nil
         }
         self.handler = handler
         notifyPort = port
         IONotificationPortSetDispatchQueue(port, queue)
 
-        for deviceID in USBMTPTransport.DeviceID.supported {
-            register(deviceID: deviceID, isArrival: true, type: kIOFirstMatchNotification)
-            register(deviceID: deviceID, isArrival: false, type: kIOTerminatedNotification)
+        // On the queue: arming a registration drains it here, and a match for an
+        // earlier registration may already be firing on the queue. Every mutation
+        // of the dictionaries stays queue-confined that way.
+        queue.sync {
+            register(label: "still-image interfaces", isArrival: true, type: kIOFirstMatchNotification, matching: USBMTPTransport.stillImageInterfaceMatching)
+            register(label: "still-image interfaces", isArrival: false, type: kIOTerminatedNotification, matching: USBMTPTransport.stillImageInterfaceMatching)
+            for deviceID in USBMTPTransport.DeviceID.supported {
+                let matching = { USBMTPTransport.deviceMatching(vendorID: deviceID.vendorID, productID: deviceID.productID) }
+                register(label: deviceID.name, isArrival: true, type: kIOFirstMatchNotification, matching: matching)
+                register(label: deviceID.name, isArrival: false, type: kIOTerminatedNotification, matching: matching)
+            }
         }
         guard !registrations.isEmpty else {
-            TethersnapLog.warning(.usb, "no matching notification registered; device watcher unavailable, consoles are found by polling only")
-            IONotificationPortDestroy(port)
+            // Every stored property is set, so returning nil runs `deinit`,
+            // which destroys the port; destroying it here too would be a double free.
+            TethersnapLog.warning(.usb, "no matching notification registered; device watcher unavailable, devices are found by polling only")
             return nil
         }
-        TethersnapLog.info(.usb, "device watcher armed for \(USBMTPTransport.DeviceID.supported.map(\.name).joined(separator: ", "))")
+        TethersnapLog.info(.usb, "device watcher armed for still-image interfaces and \(USBMTPTransport.DeviceID.supported.map(\.name).joined(separator: ", "))")
     }
 
     deinit {
@@ -73,33 +95,25 @@ public final class USBDeviceWatcher: @unchecked Sendable {
         }
     }
 
-    private func register(deviceID: USBMTPTransport.DeviceID, isArrival: Bool, type: String) {
-        // Each IOServiceAddMatchingNotification call consumes one dictionary reference.
-        let matching = IOUSBHostDevice.__createMatchingDictionary(
-            withVendorID: NSNumber(value: deviceID.vendorID),
-            productID: NSNumber(value: deviceID.productID),
-            bcdDevice: nil,
-            deviceClass: nil,
-            deviceSubclass: nil,
-            deviceProtocol: nil,
-            speed: nil,
-            productIDArray: nil
-        )
-        let registration = Registration(watcher: self, deviceID: deviceID, isArrival: isArrival)
+    /// `matching` is called per registration: each IOServiceAddMatchingNotification
+    /// call consumes one dictionary reference.
+    private func register(label: String, isArrival: Bool, type: String, matching: () -> Unmanaged<CFMutableDictionary>) {
+        let registration = Registration(watcher: self, isArrival: isArrival)
         let refcon = Unmanaged.passUnretained(registration).toOpaque()
 
         let callback: IOServiceMatchingCallback = { refcon, iterator in
             guard let refcon else { return }
             let registration = Unmanaged<Registration>.fromOpaque(refcon).takeUnretainedValue()
-            registration.watcher.drain(iterator, registration: registration, notify: true)
+            guard let watcher = registration.watcher else { return }
+            watcher.drain(iterator, registration: registration, notify: true)
         }
 
         var iterator: io_iterator_t = IO_OBJECT_NULL
         let result = IOServiceAddMatchingNotification(
-            notifyPort, type, matching.takeUnretainedValue(), callback, refcon, &iterator
+            notifyPort, type, matching().takeUnretainedValue(), callback, refcon, &iterator
         )
         guard result == KERN_SUCCESS else {
-            TethersnapLog.warning(.usb, "IOServiceAddMatchingNotification(\(type)) for \(deviceID.name) failed (\(String(format: "0x%08X", result)))")
+            TethersnapLog.warning(.usb, "IOServiceAddMatchingNotification(\(type)) for \(label) failed (\(String(format: "0x%08X", result)))")
             return
         }
         registration.iterator = iterator
@@ -110,14 +124,35 @@ public final class USBDeviceWatcher: @unchecked Sendable {
     }
 
     private func drain(_ iterator: io_iterator_t, registration: Registration, notify: Bool) {
-        var matched = false
+        var events: [Event] = []
         while case let service = IOIteratorNext(iterator), service != IO_OBJECT_NULL {
-            matched = true
-            IOObjectRelease(service)
+            defer { IOObjectRelease(service) }
+            var entryID: UInt64 = 0
+            guard IORegistryEntryGetRegistryEntryID(service, &entryID) == KERN_SUCCESS else { continue }
+            if registration.isArrival {
+                guard let deviceID = USBMTPTransport.deviceID(forService: service), let location = deviceID.locationID else { continue }
+                deviceByEntry[entryID] = deviceID
+                let isFirst = entriesByLocation[location, default: []].isEmpty
+                entriesByLocation[location, default: []].insert(entryID)
+                if isFirst { events.append(.attached(deviceID)) }
+            } else {
+                guard let deviceID = deviceByEntry.removeValue(forKey: entryID), let location = deviceID.locationID else { continue }
+                entriesByLocation[location]?.remove(entryID)
+                if entriesByLocation[location]?.isEmpty ?? true {
+                    entriesByLocation[location] = nil
+                    events.append(.removed(deviceID))
+                }
+            }
         }
-        guard matched, notify else { return }
-        let event: Event = registration.isArrival ? .attached(registration.deviceID) : .removed(registration.deviceID)
-        TethersnapLog.notice(.usb, "\(registration.deviceID.name) \(registration.isArrival ? "attached" : "removed")")
-        handler(event)
+        guard notify else { return }
+        for event in events {
+            switch event {
+            case let .attached(deviceID):
+                TethersnapLog.notice(.usb, "\(deviceID.name) (\(deviceID.hexPair)) attached")
+            case let .removed(deviceID):
+                TethersnapLog.notice(.usb, "\(deviceID.name) (\(deviceID.hexPair)) removed")
+            }
+            handler(event)
+        }
     }
 }

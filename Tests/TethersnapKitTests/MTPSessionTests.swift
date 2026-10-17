@@ -215,6 +215,21 @@ struct MTPSessionTests {
     }
 
     @Test
+    func `abandon drops the session without CloseSession and makes close a no-op`() throws {
+        let transport = MockTransport()
+        transport.enqueueResponse(code: .ok, transactionID: 0)
+        let session = MTPSession(transport: transport)
+        try session.open()
+
+        session.abandon()
+        session.close()
+
+        #expect(transport.written.count == 1)
+        #expect(!session.isValid)
+        #expect(throws: MTPError.self) { _ = try session.storageIDs() }
+    }
+
+    @Test
     func `A transport failure invalidates the session and later transactions are refused`() throws {
         let transport = MockTransport()
         transport.enqueueResponse(code: .ok, transactionID: 0)

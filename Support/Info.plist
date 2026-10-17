@@ -30,8 +30,10 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>© Luminoid. MIT License. Not affiliated with Nintendo.</string>
+	<string>© Luminoid. MIT License. Not affiliated with Nintendo, Sony, or Valve.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>Tethersnap reads the photos and videos on memory cards and USB drives you select.</string>
 </dict>
 </plist>

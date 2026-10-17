@@ -1,13 +1,17 @@
 import Foundation
 
-/// Convenience facade: claim the console over USB, open a PTP session, and
-/// expose the capture library. Shared by the CLI and the app.
+/// Convenience facade: claim a PTP device over USB, open a session, and
+/// expose the capture library. Shared by the CLI and the app; the
+/// `CaptureSource` conformance (separate file) is how the app drives it.
 public final class TethersnapConnection {
     public let deviceID: USBMTPTransport.DeviceID
     public let session: MTPSession
     public let library: CaptureLibrary
     /// DeviceInfo fetched once at connect (model, firmware, supported operations).
     public let cachedDeviceInfo: PTPDeviceInfo
+    /// Same id as the pre-connect `deviceID.descriptor`; the name is the
+    /// responder's model when it reports one, the detail its firmware.
+    public let descriptor: CaptureSourceDescriptor
 
     private let transport: MTPTransport
 
@@ -17,8 +21,17 @@ public final class TethersnapConnection {
         self.deviceID = deviceID
         session = MTPSession(transport: transport)
         library = CaptureLibrary(session: session)
-        cachedDeviceInfo = try Self.handshake(session: session)
-        TethersnapLog.notice(.mtp, "connected to \(cachedDeviceInfo.model.isEmpty ? deviceID.name : cachedDeviceInfo.model) v\(cachedDeviceInfo.deviceVersion)")
+        let info = try Self.handshake(session: session)
+        cachedDeviceInfo = info
+        let base = deviceID.descriptor
+        descriptor = CaptureSourceDescriptor(
+            id: base.id,
+            name: info.model.isEmpty ? base.name : info.model,
+            kind: base.kind,
+            detail: info.deviceVersion.isEmpty ? base.detail : "v\(info.deviceVersion)",
+            location: base.location
+        )
+        TethersnapLog.notice(.mtp, "connected to \(descriptor.name) v\(info.deviceVersion)")
     }
 
     /// Preferred handshake is the spec's: sessionless GetDeviceInfo on
@@ -33,8 +46,12 @@ public final class TethersnapConnection {
     private static func handshake(session: MTPSession) throws -> PTPDeviceInfo {
         do {
             let info = try session.deviceInfo()
-            try session.open()
-            return info
+            do {
+                try session.open()
+                return info
+            } catch let MTPError.deviceResponse(code) {
+                TethersnapLog.notice(.mtp, "OpenSession rejected (\(code)) after sessionless GetDeviceInfo; retrying with session-first handshake")
+            }
         } catch let MTPError.deviceResponse(code) {
             TethersnapLog.notice(.mtp, "sessionless GetDeviceInfo rejected (\(code)); retrying with session-first handshake")
         }
@@ -57,27 +74,21 @@ public final class TethersnapConnection {
         cachedDeviceInfo.supports(.getPartialObject)
     }
 
-    /// False once a failure desynchronized the session; the connection must be
-    /// discarded and rebuilt.
-    public var isSessionValid: Bool {
-        session.isValid
-    }
-
-    /// Connect to the first attached supported console. When stale-session
-    /// recovery had to USB-reset the console (software replug), wait for it to
-    /// re-enumerate and try once more before giving up.
-    public static func connect() throws -> TethersnapConnection {
+    /// Connect to one attached device. When stale-session recovery had to
+    /// USB-reset it (software replug), wait for it to re-enumerate at the same
+    /// location and try once more before giving up.
+    public static func connect(to deviceID: USBMTPTransport.DeviceID) throws -> TethersnapConnection {
         do {
-            return try connectOnce()
+            return try connectOnce(deviceID)
         } catch MTPError.staleSessionReset {
-            TethersnapLog.notice(.mtp, "waiting for the console to re-enumerate after the USB reset")
+            TethersnapLog.notice(.mtp, "waiting for \(deviceID.name) to re-enumerate after the USB reset")
             Thread.sleep(forTimeInterval: 3)
-            return try connectOnce()
+            return try connectOnce(deviceID)
         }
     }
 
-    private static func connectOnce() throws -> TethersnapConnection {
-        let transport = try USBMTPTransport()
+    private static func connectOnce(_ deviceID: USBMTPTransport.DeviceID) throws -> TethersnapConnection {
+        let transport = try USBMTPTransport(deviceID: deviceID)
         return try TethersnapConnection(transport: transport, deviceID: transport.deviceID)
     }
 
@@ -90,6 +101,13 @@ public final class TethersnapConnection {
     /// deinit so a dropped connection still sends CloseSession.
     public func close() {
         session.close()
+        (transport as? USBMTPTransport)?.shutdown()
+    }
+
+    /// Release the USB device without a CloseSession round trip, for a device
+    /// the system already reported removed (see `MTPSession.abandon()`).
+    public func abandon() {
+        session.abandon()
         (transport as? USBMTPTransport)?.shutdown()
     }
 }

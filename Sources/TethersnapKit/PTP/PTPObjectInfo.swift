@@ -52,10 +52,10 @@ public struct PTPObjectInfo: Sendable {
     }
 
     /// Best-effort capture date: the dataset's CaptureDate, then ModificationDate,
-    /// then the timestamp prefix Switch capture filenames carry.
+    /// then the timestamp the filename carries.
     public var bestDate: Date? {
         PTPDateParser.parse(captureDate)
             ?? PTPDateParser.parse(modificationDate)
-            ?? PTPDateParser.parseFilenameTimestamp(filename)
+            ?? FilenameDate.parse(filename)
     }
 }

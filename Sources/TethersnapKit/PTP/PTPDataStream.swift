@@ -6,7 +6,7 @@ import Foundation
 /// 0 for empty) followed by UTF-16LE code units ending in 0x0000.
 public struct PTPDataReader {
     private let bytes: [UInt8]
-    public private(set) var offset: Int
+    private(set) var offset: Int
 
     public init(_ data: Data) {
         bytes = [UInt8](data)
@@ -42,6 +42,9 @@ public struct PTPDataReader {
     public mutating func readU16Array() throws -> [UInt16] {
         let count = try readU32()
         guard count <= 0xFFFF else { throw MTPError.malformedData("implausible UInt16 array count \(count)") }
+        guard Int(count) * 2 <= remainingCount else {
+            throw MTPError.malformedData("UInt16 array count \(count) exceeds remaining \(remainingCount) bytes")
+        }
         return try (0 ..< count).map { _ in try readU16() }
     }
 

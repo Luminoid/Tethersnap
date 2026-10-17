@@ -37,14 +37,14 @@ struct CaptureLibraryTests {
         )
         transport.enqueueDataTransaction(
             operation: PTPOperationCode.getObjectInfo.rawValue, transactionID: 6,
-            payload: Fixtures.objectInfo(filename: "system.bin")
+            payload: Fixtures.objectInfo(filename: "system.bin", format: 0x3000) // undefined non-image format
         )
 
         let items = try CaptureLibrary(session: session).loadItems()
 
         #expect(items.count == 2)
         #expect(items[0].filename == "2026082917051200-CAFE.jpg")
-        #expect(items[0].kind == .screenshot)
+        #expect(items[0].kind == .image)
         #expect(items[1].filename == "2026010109300000-BEEF.mp4")
         #expect(items[1].kind == .video)
         #expect(items[1].sizeInBytes == 9_000_000)
@@ -108,7 +108,72 @@ struct CaptureLibraryTests {
         let items = try CaptureLibrary(session: session).loadItems()
 
         #expect(items.map(\.folderName) == ["Mario Kart World", "Zelda"])
-        #expect(items.map(\.kind) == [.screenshot, .video])
+        #expect(items.map(\.kind) == [.image, .video])
+    }
+
+    @Test
+    func `The flat query derives folder names from the parent associations`() throws {
+        // Camera layout: DCIM → 100CANON → IMG_0001.JPG, all in one flat list.
+        let transport = MockTransport()
+        let session = try makeOpenSession(transport)
+        enqueueU32Array(transport, operation: .getStorageIDs, transactionID: 1, values: [0x0001_0001])
+        enqueueU32Array(transport, operation: .getObjectHandles, transactionID: 2, values: [1, 2, 3, 4])
+        transport.enqueueDataTransaction(
+            operation: PTPOperationCode.getObjectInfo.rawValue, transactionID: 3,
+            payload: Fixtures.objectInfo(filename: "DCIM", format: PTPObjectFormat.association, parent: 0xFFFF_FFFF)
+        )
+        transport.enqueueDataTransaction(
+            operation: PTPOperationCode.getObjectInfo.rawValue, transactionID: 4,
+            payload: Fixtures.objectInfo(filename: "100CANON", format: PTPObjectFormat.association, parent: 1)
+        )
+        transport.enqueueDataTransaction(
+            operation: PTPOperationCode.getObjectInfo.rawValue, transactionID: 5,
+            payload: Fixtures.objectInfo(filename: "IMG_0001.JPG", parent: 2)
+        )
+        transport.enqueueDataTransaction(
+            operation: PTPOperationCode.getObjectInfo.rawValue, transactionID: 6,
+            payload: Fixtures.objectInfo(filename: "IMG_0002.CR3", format: 0xB103, parent: 2)
+        )
+
+        let items = try CaptureLibrary(session: session).loadItems()
+
+        #expect(items.map(\.filename) == ["IMG_0001.JPG", "IMG_0002.CR3"])
+        #expect(items.map(\.folderName) == ["100CANON", "100CANON"])
+        #expect(items[1].isRawImage)
+    }
+
+    @Test
+    func `An unavailable storage is skipped and one with no logical store is never queried`() throws {
+        let transport = MockTransport()
+        let session = try makeOpenSession(transport)
+        enqueueU32Array(transport, operation: .getStorageIDs, transactionID: 1, values: [0x0001_0000, 0x0001_0001, 0x0002_0001])
+        // 0x00010000 has no logical store: no request at all. 0x00010001 answers normally.
+        enqueueU32Array(transport, operation: .getObjectHandles, transactionID: 2, values: [1])
+        transport.enqueueDataTransaction(
+            operation: PTPOperationCode.getObjectInfo.rawValue, transactionID: 3,
+            payload: Fixtures.objectInfo(filename: "2026082917051200-CAFE.jpg")
+        )
+        // 0x00020001 (an empty card slot) rejects the flat query and the walk.
+        transport.enqueueResponse(code: .storeNotAvailable, transactionID: 4)
+        transport.enqueueResponse(code: .storeNotAvailable, transactionID: 5)
+
+        let items = try CaptureLibrary(session: session).loadItems()
+
+        #expect(items.map(\.filename) == ["2026082917051200-CAFE.jpg"])
+        #expect(transport.written.count == 6) // OpenSession, GetStorageIDs, 2 for the good store, 2 rejected
+        #expect(session.isValid)
+    }
+
+    @Test
+    func `A file-backed item is foreign to the PTP library`() throws {
+        let transport = MockTransport()
+        let session = try makeOpenSession(transport)
+        let foreign = CaptureItem(origin: .file(URL(fileURLWithPath: "/x/a.jpg")), filename: "a.jpg", kind: .image, sizeInBytes: 1, date: nil)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tethersnap-foreign-\(UUID().uuidString)")
+
+        #expect(throws: CaptureSourceError.self) { try CaptureLibrary(session: session).imageData(for: foreign) }
+        #expect(throws: CaptureSourceError.self) { try CaptureLibrary(session: session).download(foreign, to: directory) }
+        #expect(transport.written.count == 1) // just OpenSession
     }
 
     @Test
@@ -125,7 +190,7 @@ struct CaptureLibraryTests {
         transport.enqueue(dataHeader.encoded() + body)
         transport.enqueueResponse(code: .ok, transactionID: 1)
         let date = Date(timeIntervalSince1970: 1_790_000_000)
-        let item = CaptureItem(handle: 0x42, storageID: 1, filename: "shot.jpg", kind: .screenshot, sizeInBytes: Int64(body.count), date: date)
+        let item = CaptureItem(handle: 0x42, storageID: 1, filename: "shot.jpg", kind: .image, sizeInBytes: Int64(body.count), date: date)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tethersnap-tests-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -145,7 +210,7 @@ struct CaptureLibraryTests {
     func `download with skipExisting leaves a same-size existing file untouched`() throws {
         let transport = MockTransport()
         let session = try makeOpenSession(transport)
-        let item = CaptureItem(handle: 0x42, storageID: 1, filename: "shot.jpg", kind: .screenshot, sizeInBytes: 4, date: nil)
+        let item = CaptureItem(handle: 0x42, storageID: 1, filename: "shot.jpg", kind: .image, sizeInBytes: 4, date: nil)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tethersnap-tests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -172,7 +237,7 @@ struct CaptureLibraryTests {
         )
         transport.enqueue(dataHeader.encoded() + body)
         transport.enqueueResponse(code: .ok, transactionID: 1)
-        let item = CaptureItem(handle: 0x42, storageID: 1, filename: "shot.jpg", kind: .screenshot, sizeInBytes: 4, date: nil)
+        let item = CaptureItem(handle: 0x42, storageID: 1, filename: "shot.jpg", kind: .image, sizeInBytes: 4, date: nil)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tethersnap-tests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -197,7 +262,7 @@ struct CaptureLibraryTests {
         )
         // Promise 4096 bytes, deliver 1000, then the transport dies.
         transport.enqueue(dataHeader.encoded() + Data(repeating: 0xCD, count: 1000))
-        let item = CaptureItem(handle: 1, storageID: 1, filename: "shot.jpg", kind: .screenshot, sizeInBytes: 4096, date: nil)
+        let item = CaptureItem(handle: 1, storageID: 1, filename: "shot.jpg", kind: .image, sizeInBytes: 4096, date: nil)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tethersnap-fail-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -265,7 +330,7 @@ struct CaptureLibraryTests {
         thumbTransport.enqueueDataTransaction(
             operation: PTPOperationCode.getThumb.rawValue, transactionID: 1, payload: Data([0xFF, 0xD8])
         )
-        let thumbItem = CaptureItem(handle: 1, storageID: 1, filename: "a.jpg", kind: .screenshot, sizeInBytes: 9999, thumbSizeInBytes: 2, date: nil)
+        let thumbItem = CaptureItem(handle: 1, storageID: 1, filename: "a.jpg", kind: .image, sizeInBytes: 9999, thumbSizeInBytes: 2, date: nil)
         let thumb = try #require(try CaptureLibrary(session: thumbSession).thumbnailPayload(
             for: thumbItem, deviceOffersThumbnails: true, deviceOffersPartialObject: true
         ))
@@ -278,7 +343,7 @@ struct CaptureLibraryTests {
         prefixTransport.enqueueDataTransaction(
             operation: PTPOperationCode.getPartialObject.rawValue, transactionID: 1, payload: Data(repeating: 0xEE, count: 100)
         )
-        let shot = CaptureItem(handle: 2, storageID: 1, filename: "b.jpg", kind: .screenshot, sizeInBytes: 999_999, date: nil)
+        let shot = CaptureItem(handle: 2, storageID: 1, filename: "b.jpg", kind: .image, sizeInBytes: 999_999, date: nil)
         let prefix = try #require(try CaptureLibrary(session: prefixSession).thumbnailPayload(
             for: shot, deviceOffersThumbnails: false, deviceOffersPartialObject: true
         ))

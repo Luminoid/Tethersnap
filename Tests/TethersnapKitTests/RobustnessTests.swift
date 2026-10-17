@@ -65,7 +65,7 @@ struct RobustnessTests {
         transport.enqueueResponse(code: .ok, transactionID: 1)
         let session = MTPSession(transport: transport)
         try session.open()
-        let item = CaptureItem(handle: 1, storageID: 1, filename: "shot.jpg", kind: .screenshot, sizeInBytes: 4096, date: nil)
+        let item = CaptureItem(handle: 1, storageID: 1, filename: "shot.jpg", kind: .image, sizeInBytes: 4096, date: nil)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tethersnap-cancel-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         let token = CancelToken()

@@ -75,6 +75,7 @@ dist: dist-prereqs app
 	xcrun notarytool submit $(DIST_DIR)/$(APP_NAME).zip --keychain-profile $(NOTARY_PROFILE) --wait
 	xcrun stapler staple $(APP_BUNDLE)
 	cp -R $(APP_BUNDLE) $(DIST_DIR)/staging/
+	cp THIRD_PARTY_LICENSES.md $(DIST_DIR)/staging/
 	ln -s /Applications $(DIST_DIR)/staging/Applications
 	hdiutil create -volname $(APP_NAME) -srcfolder $(DIST_DIR)/staging -ov -format UDZO $(DMG)
 	codesign --force --sign "$(SIGN_ID)" $(DMG)
