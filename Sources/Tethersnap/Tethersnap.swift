@@ -456,9 +456,12 @@ struct FixDates: AsyncParsableCommand {
         Consoles, phones, and screenshot tools put the shot time in the filename (20260830123456…, \
         Game_20260830123456.jpg, Screenshot 2026-08-30 at 12.34.56.png). This stores it as the capture \
         date: EXIF and XMP for JPEG, PNG, TIFF, and HEIC, the QuickTime creation date for MP4/MOV \
-        (re-muxed, never re-encoded), and the Finder created/modified dates for every matched file. \
-        RAW, WebP, GIF, BMP, WebM, AVI, and MTS files get Finder dates only. A date already embedded \
-        in a file is kept unless --overwrite is given.
+        (the movie header and metadata box are patched in place, nothing is re-muxed or re-encoded), \
+        and the Finder created/modified dates for every matched file. RAW, WebP, GIF, BMP, WebM, AVI, \
+        and MTS files get Finder dates only. A Sony clip's record (C0001M01.XML beside C0001.MP4, also \
+        embedded in the clip) supplies the exact time with its zone, the camera make and model, and \
+        the position when the camera had one, all embedded too; --no-clip-metadata ignores it. A date \
+        already embedded in a file is kept unless --overwrite is given.
         """
     )
 
@@ -473,6 +476,9 @@ struct FixDates: AsyncParsableCommand {
 
     @Flag(help: "Report what would change without writing anything.")
     var dryRun = false
+
+    @Flag(name: .long, inversion: .prefixedNo, help: "Use a Sony clip's record (its M01.XML, or the copy inside the clip) for the exact time, time zone, camera make and model, and position.")
+    var clipMetadata = true
 
     @OptionGroup var options: GlobalOptions
 
@@ -497,7 +503,7 @@ struct FixDates: AsyncParsableCommand {
                 return
             }
 
-            let fixer = CaptureDateFixer(options: .init(overwrite: overwrite, recursive: recursive, dryRun: dryRun))
+            let fixer = CaptureDateFixer(options: .init(overwrite: overwrite, recursive: recursive, dryRun: dryRun, clipMetadata: clipMetadata))
             let dryRun = dryRun
             let interrupt = CLIInterrupt()
             let report = await fixer.fix(files: files, cancelToken: interrupt.token, onOutcome: { entry in

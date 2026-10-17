@@ -94,12 +94,14 @@
 
 /* 根据文件名修正日期 */
 "datefix.title" = "根据文件名修正日期";
-"datefix.explainer" = "读取每个文件名中的时间戳（主机、手机和截图的命名格式），写入为拍摄日期，并同步设置访达中的日期。JPEG、PNG、TIFF 和 HEIC 照片以及 MP4 和 MOV 视频会写入内嵌日期（视频仅重新封装，不会重新编码）；RAW、WebP、GIF、BMP、WebM、AVI 和 MTS 文件只更新访达日期。";
+"datefix.explainer" = "读取每个文件名中的时间戳（主机、手机和截图的命名格式），写入为拍摄日期，并同步设置访达中的日期。JPEG、PNG、TIFF 和 HEIC 照片以及 MP4 和 MOV 视频会写入内嵌日期（视频仅就地修补影片头，不会重新编码）；RAW、WebP、GIF、BMP、WebM、AVI 和 MTS 文件只更新访达日期。";
 "datefix.folder" = "文件夹";
 "datefix.change_folder" = "更改…";
 "datefix.include_subfolders" = "包含子文件夹";
 "datefix.overwrite" = "覆盖已有日期";
 "datefix.overwrite_hint" = "关闭时，已有日期的文件保持不变。";
+"datefix.clip_metadata" = "使用相机的片段记录";
+"datefix.clip_metadata_hint" = "Sony 片段自带 XML 记录（C0001M01.XML，片段内也有一份），含精确时间、时区、相机制造商和型号，以及相机有定位时的位置；这些会写入视频。";
 "datefix.run" = "修正日期";
 "datefix.panel_message" = "选择一个文件夹，其中的照片和视频将根据文件名设置日期。";
 "datefix.panel_prompt" = "选择";

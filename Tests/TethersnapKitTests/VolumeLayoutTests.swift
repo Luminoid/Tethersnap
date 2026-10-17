@@ -60,6 +60,16 @@ struct VolumeLayoutTests {
     }
 
     @Test
+    func `A Sony card scans DCIM and the XAVC clip folder, not proxies or thumbnails`() throws {
+        let root = try VolumeFixtures.makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try VolumeFixtures.populate(root, ["DCIM/100MSDCF/", "PRIVATE/M4ROOT/CLIP/", "PRIVATE/M4ROOT/SUB/", "PRIVATE/M4ROOT/THMBNL/"])
+
+        #expect(VolumeLayout.detect(root: root) == .dcim)
+        #expect(VolumeLayout.dcim.mediaRoots(under: root).map(\.lastPathComponent) == ["DCIM", "CLIP"])
+    }
+
+    @Test
     func `Folder names follow each layout's grouping rule`() {
         let root = URL(fileURLWithPath: "/Volumes/CARD")
         let ps5 = root.appendingPathComponent("PS5/CREATE/Screenshots")
@@ -70,6 +80,8 @@ struct VolumeLayoutTests {
 
         let dcim = root.appendingPathComponent("DCIM")
         #expect(VolumeLayout.dcim.folderName(for: dcim.appendingPathComponent("100CANON/IMG_0001.JPG"), mediaRoot: dcim) == "100CANON")
+        let clip = root.appendingPathComponent("PRIVATE/M4ROOT/CLIP")
+        #expect(VolumeLayout.dcim.folderName(for: clip.appendingPathComponent("C0001.MP4"), mediaRoot: clip) == "CLIP")
 
         #expect(VolumeLayout.generic.folderName(for: root.appendingPathComponent("exports/20260830123456_1.jpg"), mediaRoot: root) == "exports")
         #expect(VolumeLayout.generic.folderName(for: root.appendingPathComponent("20260830123456_1.jpg"), mediaRoot: root) == nil)

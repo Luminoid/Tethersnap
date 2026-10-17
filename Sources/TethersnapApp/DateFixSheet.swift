@@ -8,6 +8,7 @@ struct DateFixSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var includeSubfolders = true
     @State private var overwrite = false
+    @State private var clipMetadata = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: Layout.spacingLarge) {
@@ -39,12 +40,19 @@ struct DateFixSheet: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            VStack(alignment: .leading, spacing: Layout.spacingXXS) {
+                Toggle(L10n.dateFixClipMetadata, isOn: $clipMetadata)
+                Text(L10n.dateFixClipMetadataHint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack {
                 Spacer()
                 Button(L10n.cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button(L10n.dateFixRun) {
-                    model.beginDateFix(options: CaptureDateFixer.Options(overwrite: overwrite, recursive: includeSubfolders))
+                    model.beginDateFix(options: CaptureDateFixer.Options(overwrite: overwrite, recursive: includeSubfolders, clipMetadata: clipMetadata))
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)

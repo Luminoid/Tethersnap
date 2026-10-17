@@ -6,9 +6,8 @@ public enum DateFixError: Error {
     case notAFolder(String)
     /// ImageIO could not copy the image with its new metadata (the detail is the CFError's description).
     case imageRewriteFailed(String)
-    /// `AVAssetExportSession` could not be created for the file.
-    case videoSessionUnavailable
-    /// The container (by extension) cannot be re-muxed losslessly.
+    /// The movie (by filename) has no single `moov` box to rewrite, or a
+    /// metadata box of a kind the patcher does not understand.
     case videoContainerUnsupported(String)
 }
 
@@ -19,10 +18,8 @@ extension DateFixError: LocalizedError {
             String(format: Self.localized("error.datefix.not_a_folder"), path)
         case let .imageRewriteFailed(detail):
             String(format: Self.localized("error.datefix.image_rewrite"), detail)
-        case .videoSessionUnavailable:
-            Self.localized("error.datefix.video_session")
-        case let .videoContainerUnsupported(container):
-            String(format: Self.localized("error.datefix.video_container"), container)
+        case let .videoContainerUnsupported(filename):
+            String(format: Self.localized("error.datefix.video_container"), filename)
         }
     }
 

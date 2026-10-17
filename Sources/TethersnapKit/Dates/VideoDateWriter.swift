@@ -1,21 +1,23 @@
 import AVFoundation
 import Foundation
 
-/// Reads and writes the creation date of MP4/MOV files by re-muxing them through a
-/// passthrough `AVAssetExportSession`: the samples are copied, never re-encoded.
+/// Reads the creation date and camera of MP4/MOV files through AVFoundation and
+/// writes them with `MovieMetadataPatcher`: the `moov` box is rewritten in place
+/// and every other byte of the file stays where it is.
 enum VideoDateWriter {
-    /// Metadata identifiers that carry the creation date; all are replaced on write.
+    /// Metadata identifiers that carry the creation date; the patcher's key supersedes them.
     private static let creationDateIdentifiers: [AVMetadataIdentifier] = [
         .commonIdentifierCreationDate, .quickTimeMetadataCreationDate, .quickTimeUserDataCreationDate, .isoUserDataDate,
     ]
+    private static let makeIdentifiers: [AVMetadataIdentifier] = [.quickTimeMetadataMake, .quickTimeUserDataMake]
+    private static let locationIdentifiers: [AVMetadataIdentifier] = [.quickTimeMetadataLocationISO6709, .quickTimeUserDataLocationISO6709]
 
     /// The embedded creation date, or nil when the container carries none.
     ///
     /// Explicit metadata items come first: `AVAsset.creationDate` falls back to the movie
-    /// header's creation time, which every muxer stamps with the mux time (a re-mux
-    /// included), so it must not shadow the date tag this writer stores. A header time of
-    /// zero (what many cameras write) yields nil.
-    /// The asset is built here: `AVAsset` is not `Sendable`.
+    /// header's creation time, which every muxer stamps with the mux time, so it must not
+    /// shadow the date tag this writer stores. A header time of zero (what many cameras
+    /// write) yields nil. The asset is built here: `AVAsset` is not `Sendable`.
     @concurrent
     static func embeddedDate(at url: URL) async throws -> Date? {
         let asset = AVURLAsset(url: url)
@@ -33,69 +35,45 @@ enum VideoDateWriter {
         return nil
     }
 
-    /// Re-muxes the file at `url` with `date` as its creation date, through a sibling temp
-    /// file. A fired `cancelToken` cancels the export.
+    /// The camera make stored as metadata, nil when none. A clip whose make is
+    /// present has had its record embedded.
     @concurrent
-    static func write(_ date: Date, to url: URL, cancelToken: CancelToken?) async throws {
+    static func embeddedMake(at url: URL) async throws -> String? {
+        try await firstString(at: url, among: makeIdentifiers)
+    }
+
+    /// The ISO 6709 position stored as metadata, nil when none.
+    @concurrent
+    static func embeddedLocation(at url: URL) async throws -> String? {
+        try await firstString(at: url, among: locationIdentifiers)
+    }
+
+    private static func firstString(at url: URL, among identifiers: [AVMetadataIdentifier]) async throws -> String? {
+        let asset = AVURLAsset(url: url)
+        let metadata = try await asset.load(.metadata)
+        for identifier in identifiers {
+            for item in AVMetadataItem.metadataItems(from: metadata, filteredByIdentifier: identifier) {
+                if let value = try await item.load(.stringValue), !value.isEmpty {
+                    return value
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Writes `date` (and the camera make, model, and position when `clip` carries them)
+    /// into the file at `url`, through a sibling temp file. The `creationdate` key is
+    /// rendered in the clip's zone, else the current one; the movie-header times get the
+    /// same instant.
+    @concurrent
+    static func write(_ date: Date, clip: SonyClipMetadata? = nil, to url: URL, cancelToken: CancelToken?) async throws {
         if cancelToken?.isCancelled == true {
             throw CancellationError()
         }
-        let ext = url.pathExtension.lowercased()
-        let fileType: AVFileType = switch ext {
-        case "mov": .mov
-        case "m4v": .m4v
-        default: .mp4
-        }
-        try await AtomicRewrite.replace(url) { temp in
-            // The session is built inside the child task: neither it nor the asset is Sendable.
-            try await withThrowingTaskGroup(of: Void.self) { group in
-                group.addTask {
-                    try await export(date, from: url, to: temp, as: fileType, container: ext)
-                }
-                if let cancelToken {
-                    group.addTask {
-                        while !cancelToken.isCancelled {
-                            try await Task.sleep(for: .milliseconds(50))
-                        }
-                        throw CancellationError()
-                    }
-                }
-                // The first child to finish decides: an export error or a cancellation
-                // propagates and the group cancels the other child on the way out.
-                try await group.next()
-                group.cancelAll()
-            }
-        }
-    }
-
-    // MARK: - Helpers
-
-    private static func export(_ date: Date, from url: URL, to temp: URL, as fileType: AVFileType, container ext: String) async throws {
-        let asset = AVURLAsset(url: url)
-        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else {
-            throw DateFixError.videoSessionUnavailable
-        }
-        guard await AVAssetExportSession.compatibility(ofExportPreset: AVAssetExportPresetPassthrough, with: asset, outputFileType: fileType) else {
-            throw DateFixError.videoContainerUnsupported(ext)
-        }
-
-        // `session.metadata` replaces the source metadata wholesale, so carry it over
-        // minus every creation-date item, which the two new items supersede.
-        let stamp = MetadataDate.isoString(date, offsetColon: false)
-        var metadata = try await asset.load(.metadata).filter { item in
-            guard let identifier = item.identifier else { return true }
-            return !creationDateIdentifiers.contains(identifier)
-        }
-        for identifier in [AVMetadataIdentifier.quickTimeMetadataCreationDate, .commonIdentifierCreationDate] {
-            let item = AVMutableMetadataItem()
-            item.identifier = identifier
-            item.value = stamp as NSString
-            item.extendedLanguageTag = "und"
-            metadata.append(item)
-        }
-        session.metadata = metadata
-        session.shouldOptimizeForNetworkUse = true
-        try await session.export(to: temp, as: fileType)
+        let metadata = MovieMetadataPatcher.Metadata(
+            creationDate: date, timeZone: clip?.timeZone ?? .current, make: clip?.manufacturer, model: clip?.model, location: clip?.location
+        )
+        try MovieMetadataPatcher.patch(url, with: metadata)
     }
 
     private static func date(of item: AVMetadataItem) async throws -> Date? {

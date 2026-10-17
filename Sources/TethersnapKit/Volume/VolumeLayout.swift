@@ -11,7 +11,9 @@ public enum VolumeLayout: String, Sendable, CaseIterable {
     case ps4
     /// A Switch SD card: `Nintendo/Album/YYYY/MM/DD/…`.
     case switchAlbum
-    /// A camera card: `DCIM/<1xxABCDE>/…`.
+    /// A camera card: `DCIM/<1xxABCDE>/…`, plus the clip folders Sony cameras
+    /// keep outside DCIM (XAVC S in `PRIVATE/M4ROOT/CLIP`, AVCHD streams in
+    /// `PRIVATE/AVCHD/BDMV/STREAM`); proxies and thumbnails beside them are not scanned.
     case dcim
     /// Anything else (a Steam Deck export, a hand-made folder), walked from
     /// the root with a depth cap.
@@ -34,7 +36,7 @@ public enum VolumeLayout: String, Sendable, CaseIterable {
         case .ps5: ["PS5/CREATE/Screenshots", "PS5/CREATE/Video Clips"]
         case .ps4: ["PS4/SHARE/Screenshots", "PS4/SHARE/Video Clips"]
         case .switchAlbum: ["Nintendo/Album"]
-        case .dcim: ["DCIM"]
+        case .dcim: ["DCIM", "PRIVATE/M4ROOT/CLIP", "PRIVATE/AVCHD/BDMV/STREAM"]
         case .generic: []
         }
         guard !relative.isEmpty else { return [root] }
@@ -43,8 +45,9 @@ public enum VolumeLayout: String, Sendable, CaseIterable {
 
     /// The grouping name for a capture under `mediaRoot`: the game folder
     /// (PS5/PS4), the date folder as `YYYY-MM-DD` (Switch album), the
-    /// `100CANON` folder (DCIM), or the immediate parent (generic; nil for a
-    /// file directly at the root).
+    /// `100CANON` folder (DCIM; a clip directly inside a media root such as
+    /// `CLIP` takes that root's name), or the immediate parent (generic; nil
+    /// for a file directly at the root).
     public func folderName(for file: URL, mediaRoot: URL) -> String? {
         folderName(for: file, mediaRootComponents: Self.resolvedComponents(of: mediaRoot))
     }
@@ -64,7 +67,9 @@ public enum VolumeLayout: String, Sendable, CaseIterable {
         case .switchAlbum:
             guard components.count >= 3 else { return components.last }
             return "\(components[0])-\(components[1])-\(components[2])"
-        case .dcim, .generic:
+        case .dcim:
+            return components.last ?? mediaRootComponents.last
+        case .generic:
             return components.last
         }
     }

@@ -2,6 +2,8 @@ import Foundation
 
 /// Stamps the date embedded in a capture's filename into the file: EXIF/XMP for
 /// images, the QuickTime creation date for videos, and the Finder dates for all.
+/// A Sony clip's record (beside the clip or inside it) supplies the exact time
+/// with its zone and the camera make and model instead, embedded as well.
 ///
 /// One bad file never aborts a run; it lands in the report as ``Outcome/failed(_:)``.
 public struct CaptureDateFixer: Sendable {
@@ -12,11 +14,16 @@ public struct CaptureDateFixer: Sendable {
         public var recursive = true
         /// Report what would change without touching any file.
         public var dryRun = false
+        /// Use a Sony clip's record (`C0001M01.XML` beside the clip, or the copy
+        /// inside it) for the exact time with its zone, the camera make and
+        /// model, and the position, and embed them in the clip.
+        public var clipMetadata = true
 
-        public init(overwrite: Bool = false, recursive: Bool = true, dryRun: Bool = false) {
+        public init(overwrite: Bool = false, recursive: Bool = true, dryRun: Bool = false, clipMetadata: Bool = true) {
             self.overwrite = overwrite
             self.recursive = recursive
             self.dryRun = dryRun
+            self.clipMetadata = clipMetadata
         }
     }
 
@@ -25,7 +32,8 @@ public struct CaptureDateFixer: Sendable {
         /// (camera RAW, WebP, GIF, BMP, WebM, AVI, MTS, or an image whose rewrite
         /// left no readable date).
         case updated(Date, embedded: Bool)
-        /// An embedded date is present and ``Options/overwrite`` is off.
+        /// An embedded date is present and ``Options/overwrite`` is off (a clip
+        /// with a camera record counts once its make is embedded).
         case alreadyDated(Date)
         /// The filename carries no recognizable timestamp.
         case noDateInName
@@ -78,9 +86,10 @@ public struct CaptureDateFixer: Sendable {
 
     // MARK: - Candidates
 
-    /// Candidate files under `folder`, sorted by path. Hidden files and Tethersnap's own
-    /// temp files (`*.tethersnap-partial`, `*.tethersnap-dates*`) are skipped; subfolders
-    /// are descended only when `recursive`.
+    /// Candidate files under `folder`, sorted by path. Hidden files, Tethersnap's own
+    /// temp files (`*.tethersnap-partial`, `*.tethersnap-dates*`), and Sony clip records
+    /// (`*M01.XML`, read through their clips) are skipped; subfolders are descended only
+    /// when `recursive`.
     public static func candidates(in folder: URL, recursive: Bool) throws -> [URL] {
         guard FileSystem.isDirectory(folder) else {
             throw DateFixError.notAFolder(folder.path)
@@ -96,7 +105,8 @@ public struct CaptureDateFixer: Sendable {
         var files: [URL] = []
         for case let url as URL in enumerator {
             guard (try? url.resourceValues(forKeys: keys).isRegularFile) == true,
-                  !TemporaryFiles.isTemporary(url.lastPathComponent) else { continue }
+                  !TemporaryFiles.isTemporary(url.lastPathComponent),
+                  !SonyClipMetadata.isSidecarName(url.lastPathComponent) else { continue }
             files.append(url)
         }
         return files.sorted { $0.path < $1.path }
@@ -196,12 +206,14 @@ public struct CaptureDateFixer: Sendable {
             TethersnapLog.debug(.dates, "unsupported extension", private: url.path)
             return .unsupported
         }
-        guard let date = FilenameDate.parse(url.lastPathComponent) else {
+        // A clip's record beats the filename: the exact start, with its zone.
+        let clip = kind == .video && options.clipMetadata ? SonyClipMetadata.read(for: url) : nil
+        guard let date = clip?.creationDate ?? FilenameDate.parse(url.lastPathComponent) else {
             TethersnapLog.debug(.dates, "no date in filename", private: url.path)
             return .noDateInName
         }
         do {
-            if !options.overwrite, let existing = try await embeddedDate(at: url, kind: kind) {
+            if !options.overwrite, let existing = try await existingDate(at: url, kind: kind, clip: clip) {
                 TethersnapLog.debug(.dates, "already dated", private: url.path)
                 return .alreadyDated(existing)
             }
@@ -209,7 +221,7 @@ public struct CaptureDateFixer: Sendable {
                 TethersnapLog.debug(.dates, "would update (dry run)", private: url.path)
                 return .updated(date, embedded: kind != .fileDatesOnly)
             }
-            let embedded = try await embed(date, at: url, kind: kind, cancelToken: cancelToken)
+            let embedded = try await embed(date, clip: clip, at: url, kind: kind, cancelToken: cancelToken)
             try FileDates.set(date, at: url)
             TethersnapLog.debug(.dates, embedded ? "updated" : "updated file dates only", private: url.path)
             return .updated(date, embedded: embedded)
@@ -217,6 +229,21 @@ public struct CaptureDateFixer: Sendable {
             TethersnapLog.error(.dates, "date fix failed", private: url.path, error: error)
             return .failed(error)
         }
+    }
+
+    /// The date that makes a file count as dated. A clip with a camera record
+    /// counts only once its make is embedded (and its position, when the record
+    /// has one): the camera's own file carries a header time but no make,
+    /// model, zone, or position, and the record adds those.
+    private func existingDate(at url: URL, kind: Kind, clip: SonyClipMetadata?) async throws -> Date? {
+        if let clip, clip.hasCamera {
+            guard try await VideoDateWriter.embeddedMake(at: url) != nil else { return nil }
+            if clip.location != nil, try await VideoDateWriter.embeddedLocation(at: url) == nil {
+                return nil
+            }
+            return try await VideoDateWriter.embeddedDate(at: url) ?? clip.creationDate
+        }
+        return try await embeddedDate(at: url, kind: kind)
     }
 
     private func embeddedDate(at url: URL, kind: Kind) async throws -> Date? {
@@ -228,7 +255,7 @@ public struct CaptureDateFixer: Sendable {
     }
 
     /// Writes the embedded date; returns false when the file keeps only its Finder dates.
-    private func embed(_ date: Date, at url: URL, kind: Kind, cancelToken: CancelToken?) async throws -> Bool {
+    private func embed(_ date: Date, clip: SonyClipMetadata?, at url: URL, kind: Kind, cancelToken: CancelToken?) async throws -> Bool {
         switch kind {
         case .image:
             try ImageDateWriter.write(date, to: url)
@@ -240,7 +267,7 @@ public struct CaptureDateFixer: Sendable {
             }
             return true
         case .video:
-            try await VideoDateWriter.write(date, to: url, cancelToken: cancelToken)
+            try await VideoDateWriter.write(date, clip: clip, to: url, cancelToken: cancelToken)
             return true
         case .fileDatesOnly:
             return false

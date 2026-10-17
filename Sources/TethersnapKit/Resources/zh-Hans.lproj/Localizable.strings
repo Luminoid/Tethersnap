@@ -21,8 +21,7 @@
 /* DateFixError 用户可见描述 */
 "error.datefix.not_a_folder" = "“%@”不是文件夹。";
 "error.datefix.image_rewrite" = "无法重写图片元数据：%@";
-"error.datefix.video_session" = "无法为此文件启动视频重新封装。";
-"error.datefix.video_container" = "“%@”容器无法在不重新编码的情况下重写。";
+"error.datefix.video_container" = "“%@”不是可就地重写的 MP4 或 QuickTime 影片。";
 
 /* 存储默认名称 */
 "storage.default" = "存储空间";

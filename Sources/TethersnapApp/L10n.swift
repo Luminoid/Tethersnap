@@ -174,6 +174,8 @@ enum L10n {
     static var dateFixIncludeSubfolders: String { localized("datefix.include_subfolders") }
     static var dateFixOverwrite: String { localized("datefix.overwrite") }
     static var dateFixOverwriteHint: String { localized("datefix.overwrite_hint") }
+    static var dateFixClipMetadata: String { localized("datefix.clip_metadata") }
+    static var dateFixClipMetadataHint: String { localized("datefix.clip_metadata_hint") }
     static var dateFixRun: String { localized("datefix.run") }
     static var dateFixPanelMessage: String { localized("datefix.panel_message") }
     static var dateFixPanelPrompt: String { localized("datefix.panel_prompt") }

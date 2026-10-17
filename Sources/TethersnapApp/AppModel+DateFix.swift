@@ -25,7 +25,7 @@ extension AppModel {
 
     func fixDates(in folder: URL, options: CaptureDateFixer.Options) async {
         guard !isFixingDates else { return }
-        TethersnapLog.notice(.app, "fixing dates (overwrite \(options.overwrite), recursive \(options.recursive))", private: folder.path)
+        TethersnapLog.notice(.app, "fixing dates (overwrite \(options.overwrite), recursive \(options.recursive), clip metadata \(options.clipMetadata))", private: folder.path)
         dateFixProgress = DateFixProgress(completed: 0, total: 0)
         dateFixSummary = nil
         let token = CancelToken()
@@ -40,7 +40,10 @@ extension AppModel {
         )
         dateFixProgressTask = Task { [weak self] in
             for await (completed, total) in progressStream {
-                self?.dateFixProgress = DateFixProgress(completed: completed, total: total)
+                // A value still buffered when the run ends must not bring the
+                // chip back: `isFixingDates` would then stay true for good.
+                guard let self, dateFixProgress != nil else { continue }
+                dateFixProgress = DateFixProgress(completed: completed, total: total)
             }
         }
         defer {

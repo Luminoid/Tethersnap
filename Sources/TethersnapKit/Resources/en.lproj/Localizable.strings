@@ -21,8 +21,7 @@
 /* DateFixError user-facing descriptions */
 "error.datefix.not_a_folder" = "\"%@\" is not a folder.";
 "error.datefix.image_rewrite" = "Could not rewrite the image metadata: %@";
-"error.datefix.video_session" = "Could not start the video re-mux for this file.";
-"error.datefix.video_container" = "The \"%@\" container cannot be rewritten without re-encoding.";
+"error.datefix.video_container" = "\"%@\" is not an MP4 or QuickTime movie that can be rewritten in place.";
 
 /* Storage fallback name */
 "storage.default" = "Storage";

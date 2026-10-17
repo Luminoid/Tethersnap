@@ -94,12 +94,14 @@
 
 /* Fix dates from filenames */
 "datefix.title" = "Fix Dates from Filenames";
-"datefix.explainer" = "Reads the timestamp in each filename (console, phone, and screenshot naming patterns), stores it as the capture date, and sets the Finder dates to match. The date is embedded in JPEG, PNG, TIFF, and HEIC photos and in MP4 and MOV videos (re-muxed without re-encoding); RAW, WebP, GIF, BMP, WebM, AVI, and MTS files get Finder dates only.";
+"datefix.explainer" = "Reads the timestamp in each filename (console, phone, and screenshot naming patterns), stores it as the capture date, and sets the Finder dates to match. The date is embedded in JPEG, PNG, TIFF, and HEIC photos and in MP4 and MOV videos (the movie header is patched in place, nothing is re-encoded); RAW, WebP, GIF, BMP, WebM, AVI, and MTS files get Finder dates only.";
 "datefix.folder" = "Folder";
 "datefix.change_folder" = "Change…";
 "datefix.include_subfolders" = "Include subfolders";
 "datefix.overwrite" = "Overwrite existing dates";
 "datefix.overwrite_hint" = "When off, files that already carry a date are left alone.";
+"datefix.clip_metadata" = "Use the camera's clip record";
+"datefix.clip_metadata_hint" = "Sony clips come with an XML record (C0001M01.XML, also inside the clip) holding the exact time, its time zone, the camera make and model, and the position when the camera had one; those are embedded in the video.";
 "datefix.run" = "Fix Dates";
 "datefix.panel_message" = "Choose the folder whose photos and videos should get their dates from their filenames.";
 "datefix.panel_prompt" = "Choose";
