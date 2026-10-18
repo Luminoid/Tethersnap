@@ -33,13 +33,35 @@ Scaffolded with [Monolith](https://github.com/Luminoid/Monolith).
 | PS5, PS4 | A USB drive the console wrote to (`PS5/CREATE/…`, `PS4/SHARE/…`) | These consoles have no USB mode for a Mac. Captures group by game; WebM clips export as they are. The PS5 saves a 1920×1080 poster frame beside every clip (`<Game>_<stamp>.jpg` next to the `.mp4`); Tethersnap lists and exports it as a photo of its own |
 | Switch SD card | The card in a reader (`Nintendo/Album/…`) | Groups by date |
 | Camera cards | The card in a reader (`DCIM/…`, plus Sony's `PRIVATE/M4ROOT/CLIP` and AVCHD `STREAM` clip folders) | Groups by folder (`100CANON`, `CLIP`) |
-| Steam Deck, anything else | Any mounted drive, or **File › Open Folder…** | Screenshots copied off the Deck, a phone backup, a folder of old exports |
+| Steam Deck, anything else | Any mounted drive, or **File › Open Folder…** | Screenshots copied off the Deck over SSH (see Usage), a phone backup, a folder of old exports |
 
 iPhones and iPads expose a PTP interface too and appear in the sidebar; they are untested and never opened automatically.
 
 ## Usage
 
 On a Switch: **System Settings → Data Management → Manage Screenshots and Videos → Copy to PC via USB**, connected from the console's **bottom** USB-C port (not the dock) with a full-data cable. On a camera: choose its PTP or MTP USB mode.
+
+On a Steam Deck: the Deck has no USB mode for a Mac, and its microSD card is ext4, which macOS cannot read, so copy over Wi-Fi. Screenshots live in `~/.local/share/Steam/userdata/<account>/760/remote/<app id>/screenshots/`, one numeric app-ID folder per game with a `thumbnails` folder beside the files. The [Shotty](https://github.com/safijari/Shotty) plugin for [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) (both independent projects; Decky is installed in Desktop mode, see its [installation guide](https://wiki.deckbrew.xyz/en/user-guide/install), and Shotty comes from Decky's [plugin store](https://wiki.deckbrew.xyz/en/user-guide/plugin-store)) hardlinks every screenshot into `~/Pictures/Screenshots/<Game>/`, named by game, which is the layout Tethersnap groups best. Two things to know about it: it starts with the screenshots taken after it was installed, so press its **Aggregate** button once to bring in the older ones (Quick Access menu, the **…** button, then the Decky plug icon at the bottom of the tab strip, then Shotty); and a hardlink survives deletion in Steam's Media view, so a screenshot deleted there stays in Shotty's folder until it is deleted there too (in Desktop mode, with Dolphin). Then: on the Deck, press the Steam button, choose **Power → Switch to Desktop**, and open **Konsole** from the application launcher (under System). Turn SSH on there, copy from the Mac, and turn it off again when done:
+
+```bash
+# 1. on the Deck, in Konsole
+passwd                                    # set a password if there is none yet (SteamOS ships without one)
+sudo systemctl start sshd                 # SSH on until the Deck sleeps or restarts
+ip -4 addr show wlan0 | grep inet         # the Deck's IP address, in case steamdeck.local does not resolve
+
+# 2. on the Mac, with the Deck awake; enter the Deck's password when asked (--delete mirrors removals, so the copy matches the Deck)
+rsync -a --delete --exclude most_recent.jpg deck@steamdeck.local:Pictures/Screenshots/ ~/Pictures/Tethersnap/Steam\ Deck/   # most_recent.jpg is Shotty's copy of the newest shot
+
+# without Shotty: Steam's own folders, grouped by app ID
+rsync -a --delete --exclude thumbnails "deck@steamdeck.local:.local/share/Steam/userdata/*/760/remote/" ~/Pictures/Tethersnap/Steam\ Deck/
+
+# 3. on the Deck, when done
+sudo systemctl stop sshd                  # SSH off; `sudo systemctl enable --now sshd` instead of start keeps it on across restarts, `disable --now` undoes that
+```
+
+Finally pick **Return to Gaming Mode** on the desktop, and on the Mac choose **File › Open Folder…** on the copy.
+
+Group by Folder then shows one group per game (with Steam's own folders, every file sits in a `screenshots` folder, so they all group together), and Fix Dates reads the `YYYYMMDDhhmmss_1` stamps. Game Recording clips are exported in Desktop mode (Library › View › Recordings & Screenshots › Share › Export Video File, into Videos by default) and copy the same way.
 
 CLI:
 

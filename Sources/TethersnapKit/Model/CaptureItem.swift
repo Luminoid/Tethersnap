@@ -174,7 +174,7 @@ public extension [CaptureItem] {
             }
             var copy = item
             copy.exportFilename = exportName
-            TethersnapLog.notice(.library, "duplicate filename; exporting under a numbered name", private: "\(item.filename) (\(item.origin)) as \(copy.exportFilename)")
+            TethersnapLog.notice(.library, "duplicate filename; a flat export writes it under a numbered name", private: "\(item.filename) (\(item.origin)) as \(copy.exportFilename)")
             return copy
         }
     }
