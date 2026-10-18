@@ -94,7 +94,7 @@
 
 /* 根据文件名修正日期 */
 "datefix.title" = "根据文件名修正日期";
-"datefix.explainer" = "读取每个文件名中的时间戳（主机、手机和截图的命名格式），写入为拍摄日期，并同步设置访达中的日期。JPEG、PNG、TIFF 和 HEIC 照片以及 MP4 和 MOV 视频会写入内嵌日期（视频仅就地修补影片头，不会重新编码）；RAW、WebP、GIF、BMP、WebM、AVI 和 MTS 文件只更新访达日期。";
+"datefix.explainer" = "读取每个文件名中的时间戳（主机、手机和截图的命名格式），写入为拍摄日期，并同步设置访达中的日期。JPEG、PNG、TIFF 和 HEIC 照片以及 MP4 和 MOV 视频会写入内嵌日期（视频仅就地修补影片头，不会重新编码）；RAW、WebP、GIF、BMP、WebM、AVI、MTS 和 M2TS 文件只更新访达日期。";
 "datefix.folder" = "文件夹";
 "datefix.change_folder" = "更改…";
 "datefix.include_subfolders" = "包含子文件夹";

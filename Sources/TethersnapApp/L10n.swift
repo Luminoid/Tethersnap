@@ -215,7 +215,12 @@ enum L10n {
         String.localizedStringWithFormat(localized(count == 1 ? "captures.count.one" : "captures.count.other"), count)
     }
 
+    /// Found through `PackageResources`: the generated `Bundle.module` alone
+    /// looks at the app's root and the build machine's path, never at
+    /// `Contents/Resources`, where `make app` puts the bundle.
+    private static let bundle = PackageResources.bundle(named: "Tethersnap_TethersnapApp") { Bundle.module }
+
     private static func localized(_ key: String) -> String {
-        Bundle.module.localizedString(forKey: key, value: nil, table: nil)
+        bundle.localizedString(forKey: key, value: nil, table: nil)
     }
 }

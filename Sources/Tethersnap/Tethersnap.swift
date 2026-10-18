@@ -457,8 +457,8 @@ struct FixDates: AsyncParsableCommand {
         Game_20260830123456.jpg, Screenshot 2026-08-30 at 12.34.56.png). This stores it as the capture \
         date: EXIF and XMP for JPEG, PNG, TIFF, and HEIC, the QuickTime creation date for MP4/MOV \
         (the movie header and metadata box are patched in place, nothing is re-muxed or re-encoded), \
-        and the Finder created/modified dates for every matched file. RAW, WebP, GIF, BMP, WebM, AVI, \
-        and MTS files get Finder dates only. A Sony clip's record (C0001M01.XML beside C0001.MP4, also \
+        and the Finder created/modified dates for every matched file. RAW, WebP, GIF, BMP, WebM, AVI, MTS, \
+        and M2TS files get Finder dates only. A Sony clip's record (C0001M01.XML beside C0001.MP4, also \
         embedded in the clip) supplies the exact time with its zone, the camera make and model, and \
         the position when the camera had one, all embedded too; --no-clip-metadata ignores it. A date \
         already embedded in a file is kept unless --overwrite is given.

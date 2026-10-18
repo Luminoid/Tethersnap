@@ -94,7 +94,7 @@
 
 /* Fix dates from filenames */
 "datefix.title" = "Fix Dates from Filenames";
-"datefix.explainer" = "Reads the timestamp in each filename (console, phone, and screenshot naming patterns), stores it as the capture date, and sets the Finder dates to match. The date is embedded in JPEG, PNG, TIFF, and HEIC photos and in MP4 and MOV videos (the movie header is patched in place, nothing is re-encoded); RAW, WebP, GIF, BMP, WebM, AVI, and MTS files get Finder dates only.";
+"datefix.explainer" = "Reads the timestamp in each filename (console, phone, and screenshot naming patterns), stores it as the capture date, and sets the Finder dates to match. The date is embedded in JPEG, PNG, TIFF, and HEIC photos and in MP4 and MOV videos (the movie header is patched in place, nothing is re-encoded); RAW, WebP, GIF, BMP, WebM, AVI, MTS, and M2TS files get Finder dates only.";
 "datefix.folder" = "Folder";
 "datefix.change_folder" = "Change…";
 "datefix.include_subfolders" = "Include subfolders";

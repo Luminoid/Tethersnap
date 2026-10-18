@@ -2,5 +2,5 @@
 /// runs without a bundle. It must equal `CFBundleShortVersionString` in `Support/Info.plist`
 /// (a test enforces this), so bump both together.
 public enum TethersnapVersion {
-    public static let current = "0.2.0"
+    public static let current = "0.3.0"
 }

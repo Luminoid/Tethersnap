@@ -29,7 +29,7 @@ public struct CaptureDateFixer: Sendable {
 
     public enum Outcome: Sendable {
         /// The date was written. `embedded == false` means only the Finder dates were set
-        /// (camera RAW, WebP, GIF, BMP, WebM, AVI, MTS, or an image whose rewrite
+        /// (camera RAW, WebP, GIF, BMP, WebM, AVI, MTS, M2TS, or an image whose rewrite
         /// left no readable date).
         case updated(Date, embedded: Bool)
         /// An embedded date is present and ``Options/overwrite`` is off (a clip
@@ -181,7 +181,7 @@ public struct CaptureDateFixer: Sendable {
         case image
         case video
         /// Media with no losslessly rewritable date tag (camera RAW, WebP, GIF,
-        /// BMP, WebM, AVI, MTS): only the Finder dates are set.
+        /// BMP, WebM, AVI, MTS, M2TS): only the Finder dates are set.
         case fileDatesOnly
     }
 
