@@ -30,7 +30,7 @@ Scaffolded with [Monolith](https://github.com/Luminoid/Monolith).
 | Nintendo Switch 2 | USB, in Copy to PC mode | Tested on firmware 22.5.0; captures group by game |
 | Nintendo Switch | USB, in Copy to PC mode (system software 11.0 or later) | Same protocol, recognized by its USB ID |
 | Cameras (DSLR, mirrorless) | USB, in the camera's PTP or MTP mode | Any still-image-class device. RAW files are listed, previewed, and exported untouched. In Image Capture, set the camera's "Connecting this camera opens" to "No application" so macOS does not hold it |
-| PS5, PS4 | A USB drive the console wrote to (`PS5/CREATE/…`, `PS4/SHARE/…`) | These consoles have no USB mode for a Mac. Captures group by game; WebM clips export as they are |
+| PS5, PS4 | A USB drive the console wrote to (`PS5/CREATE/…`, `PS4/SHARE/…`) | These consoles have no USB mode for a Mac. Captures group by game; WebM clips export as they are. The PS5 saves a 1920×1080 poster frame beside every clip (`<Game>_<stamp>.jpg` next to the `.mp4`); Tethersnap lists and exports it as a photo of its own |
 | Switch SD card | The card in a reader (`Nintendo/Album/…`) | Groups by date |
 | Camera cards | The card in a reader (`DCIM/…`, plus Sony's `PRIVATE/M4ROOT/CLIP` and AVCHD `STREAM` clip folders) | Groups by folder (`100CANON`, `CLIP`) |
 | Steam Deck, anything else | Any mounted drive, or **File › Open Folder…** | Screenshots copied off the Deck, a phone backup, a folder of old exports |
