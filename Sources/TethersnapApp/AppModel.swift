@@ -40,7 +40,16 @@ final class AppModel {
     /// volumes, then the opened folders that exist right now.
     private(set) var sources: [CaptureSourceDescriptor] = []
     /// The source being opened or shown; stays set on failure so Retry has a target.
-    private(set) var activeSource: CaptureSourceDescriptor?
+    /// Another source, or none, drops the folder being shown; the same source
+    /// reopened (Try Again, the reconnect after a cancelled export) keeps it.
+    private(set) var activeSource: CaptureSourceDescriptor? {
+        didSet {
+            if activeSource?.id != oldValue?.id {
+                folderScope = .all
+            }
+        }
+    }
+
     /// Everything on the source; `filteredItems` is the visible slice.
     private(set) var items: [CaptureItem] = [] { didSet { updateFilteredItems() } }
     /// Memoized filter+sort result; recomputing per body access re-sorted the
@@ -51,6 +60,9 @@ final class AppModel {
     /// Sections for by-folder mode, ordered by each folder's first item in the
     /// current sort; empty in flat mode.
     private(set) var groupedItems: [FolderGroup] = []
+    /// The open source's folders for the sidebar, newest capture first, with
+    /// counts that follow `filter`; listed whatever `folderScope` is.
+    private(set) var folders: [CaptureFolder] = []
     /// Memoized beside `filteredItems`: the toolbar label, the export menu,
     /// and the drag payload all read these per render.
     private(set) var selectedItems: [CaptureItem] = []
@@ -73,6 +85,8 @@ final class AppModel {
     private(set) var selectionAnchor: CaptureItem.ID?
     var filter: Filter = .all { didSet { updateFilteredItems() } }
     var sortOrder: SortOrder = .newestFirst { didSet { updateFilteredItems() } }
+    /// Not persisted: the next launch may open another source.
+    var folderScope: FolderScope = .all { didSet { updateFilteredItems() } }
     var viewMode: ViewMode = AppPreferences.viewMode {
         didSet {
             AppPreferences.saveViewMode(viewMode)
@@ -146,8 +160,8 @@ final class AppModel {
 
     // MARK: - Derived state
 
-    /// Sidebar selection. Writes open the chosen source; nil (a click on empty
-    /// sidebar space) keeps the current one.
+    /// The open source's ID. Writes open the chosen source; nil (a click on
+    /// empty sidebar space) keeps the current one.
     var activeSourceID: CaptureSourceDescriptor.ID? {
         get { activeSource?.id }
         set {
@@ -155,6 +169,37 @@ final class AppModel {
                   let descriptor = sources.first(where: { $0.id == newValue }) else { return }
             beginOpen(descriptor)
         }
+    }
+
+    /// Sidebar selection: a folder row narrows the grid to that folder; the
+    /// open source's own row shows everything again without reopening it (a
+    /// USB reconnect takes seconds and refetches every thumbnail); another
+    /// source's row opens that source.
+    var sidebarSelection: SidebarItem? {
+        get {
+            if phase == .ready, case let .only(name) = folderScope { return .folder(name) }
+            return activeSource.map { .source($0.id) }
+        }
+        set {
+            switch newValue {
+            case let .source(id) where id == activeSource?.id:
+                folderScope = .all
+            case let .source(id):
+                activeSourceID = id
+            case let .folder(name) where phase == .ready:
+                folderScope = .only(name)
+            case .folder, nil:
+                break
+            }
+        }
+    }
+
+    /// The folder the grid is narrowed to, as the title shows it; nil while
+    /// everything is shown, and off the grid (opening, failed), where the
+    /// sidebar highlights the source row instead.
+    var folderScopeName: String? {
+        guard phase == .ready, case let .only(name) = folderScope else { return nil }
+        return name ?? L10n.groupOther
     }
 
     var deviceSources: [CaptureSourceDescriptor] { sources.filter(\.kind.isUSB) }
@@ -183,7 +228,12 @@ final class AppModel {
     }
 
     private func updateFilteredItems() {
-        let visible = sortOrder.sorted(items.matching(filter.kind))
+        let scoped = switch folderScope {
+        case .all: items
+        case let .only(name): items.inFolder(name)
+        }
+        let visible = sortOrder.sorted(scoped.matching(filter.kind))
+        folders = items.folders(counting: filter.kind)
         if viewMode == .byFolder {
             // Buckets keyed by folder name, ordered by first appearance in the
             // sorted list, so sections follow the active sort.
@@ -469,6 +519,7 @@ final class AppModel {
             }
             activeSource = opened.descriptor
             items = opened.items
+            reconcileFolderScope()
             phase = .ready
             // A USB detail is the firmware; a drive's or folder's is its path.
             let firmware = opened.descriptor.kind.isUSB ? " (\(opened.descriptor.detail ?? ""))" : ""
@@ -518,6 +569,7 @@ final class AppModel {
         guard phase == .ready, !isExporting else { return }
         do {
             items = try await service.reloadItems()
+            reconcileFolderScope()
         } catch {
             // Losing the grid silently looks like a wipe; explain and offer Retry.
             TethersnapLog.error(.app, "refresh failed", error: error)
@@ -550,6 +602,16 @@ final class AppModel {
         phase = .noSource
         TethersnapLog.notice(.app, "no source open")
         await service.close(detached: detached)
+    }
+
+    /// After a reload: a folder deleted on the device meanwhile, or a list
+    /// down to one folder (whose sidebar rows are hidden, so nothing could be
+    /// clicked to leave it), falls back to everything.
+    private func reconcileFolderScope() {
+        guard case let .only(name) = folderScope,
+              folders.count < 2 || !folders.contains(where: { $0.name == name }) else { return }
+        TethersnapLog.notice(.app, "the folder being shown is gone; showing everything", private: name)
+        folderScope = .all
     }
 
     /// Reopen when a swallowed-looking failure actually killed a PTP session
