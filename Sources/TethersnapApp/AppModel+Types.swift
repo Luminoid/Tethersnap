@@ -45,6 +45,20 @@ extension AppModel {
         }
     }
 
+    /// What the grid shows of the open source: everything, or one source
+    /// folder, which is one game on a Switch 2 or a PS5 drive. `only(nil)` is
+    /// the items enumerated without a folder, the "Other" group.
+    enum FolderScope: Hashable {
+        case all
+        case only(String?)
+    }
+
+    /// One sidebar row: a source, or a folder of the open source.
+    enum SidebarItem: Hashable {
+        case source(CaptureSourceDescriptor.ID)
+        case folder(String?)
+    }
+
     /// One by-folder section: the folder name and its visible items.
     struct FolderGroup: Identifiable, Equatable {
         let name: String

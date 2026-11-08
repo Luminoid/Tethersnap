@@ -1,31 +1,29 @@
 import SwiftUI
 import TethersnapKit
 
-/// Devices, drives, and opened folders; selecting a row opens it.
+/// Devices, drives, and opened folders; selecting a row opens it. The open
+/// source lists its folders beneath it (one per game on a console or a PS5
+/// drive); selecting one narrows the grid to it.
 struct SourceSidebar: View {
     @Environment(AppModel.self) private var model
+    @State private var showsFolders = true
 
     var body: some View {
         @Bindable var model = model
-        return List(selection: $model.activeSourceID) {
+        return List(selection: $model.sidebarSelection) {
             if !model.deviceSources.isEmpty {
                 Section(L10n.sidebarDevices) {
-                    ForEach(model.deviceSources) { row($0) }
+                    ForEach(model.deviceSources) { sourceRow($0) }
                 }
             }
             if !model.volumeSources.isEmpty {
                 Section(L10n.sidebarDrives) {
-                    ForEach(model.volumeSources) { row($0) }
+                    ForEach(model.volumeSources) { sourceRow($0) }
                 }
             }
             if !model.folderSources.isEmpty {
                 Section(L10n.sidebarFolders) {
-                    ForEach(model.folderSources) { descriptor in
-                        row(descriptor)
-                            .contextMenu {
-                                Button(L10n.sidebarRemoveFolder) { model.removeFolder(descriptor) }
-                            }
-                    }
+                    ForEach(model.folderSources) { sourceRow($0) }
                 }
             }
         }
@@ -52,10 +50,44 @@ struct SourceSidebar: View {
         }
     }
 
+    /// The open source carries its folders as children once listed; a single
+    /// folder is not listed, since choosing it would change nothing.
+    @ViewBuilder
+    private func sourceRow(_ descriptor: CaptureSourceDescriptor) -> some View {
+        if descriptor.id == model.activeSource?.id, model.phase == .ready, model.folders.count >= 2 {
+            DisclosureGroup(isExpanded: $showsFolders) {
+                ForEach(model.folders) { folderRow($0) }
+            } label: {
+                row(descriptor)
+            }
+        } else {
+            row(descriptor)
+        }
+    }
+
+    /// An opened folder's row alone carries Remove from Sidebar; on the
+    /// disclosure group it would reach the folder rows beneath it too.
+    @ViewBuilder
     private func row(_ descriptor: CaptureSourceDescriptor) -> some View {
-        Label(descriptor.name, systemImage: descriptor.kind.symbolName)
+        let label = Label(descriptor.name, systemImage: descriptor.kind.symbolName)
             .lineLimit(1)
             .help(descriptor.detail ?? descriptor.name)
+            .tag(AppModel.SidebarItem.source(descriptor.id))
+        if descriptor.kind == .folder {
+            label.contextMenu {
+                Button(L10n.sidebarRemoveFolder) { model.removeFolder(descriptor) }
+            }
+        } else {
+            label
+        }
+    }
+
+    private func folderRow(_ folder: CaptureFolder) -> some View {
+        Label(folder.name ?? L10n.groupOther, systemImage: "folder")
+            .lineLimit(1)
+            .badge(folder.count)
+            .help(folder.name ?? L10n.groupOther)
+            .tag(AppModel.SidebarItem.folder(folder.name))
     }
 }
 
