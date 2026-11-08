@@ -40,7 +40,16 @@ final class AppModel {
     /// volumes, then the opened folders that exist right now.
     private(set) var sources: [CaptureSourceDescriptor] = []
     /// The source being opened or shown; stays set on failure so Retry has a target.
-    private(set) var activeSource: CaptureSourceDescriptor?
+    /// Another source, or none, drops the folder being shown; the same source
+    /// reopened (Try Again, the reconnect after a cancelled export) keeps it.
+    private(set) var activeSource: CaptureSourceDescriptor? {
+        didSet {
+            if activeSource?.id != oldValue?.id {
+                folderScope = .all
+            }
+        }
+    }
+
     /// Everything on the source; `filteredItems` is the visible slice.
     private(set) var items: [CaptureItem] = [] { didSet { updateFilteredItems() } }
     /// Memoized filter+sort result; recomputing per body access re-sorted the
@@ -186,9 +195,10 @@ final class AppModel {
     }
 
     /// The folder the grid is narrowed to, as the title shows it; nil while
-    /// everything is shown.
+    /// everything is shown, and off the grid (opening, failed), where the
+    /// sidebar highlights the source row instead.
     var folderScopeName: String? {
-        guard case let .only(name) = folderScope else { return nil }
+        guard phase == .ready, case let .only(name) = folderScope else { return nil }
         return name ?? L10n.groupOther
     }
 
@@ -498,11 +508,6 @@ final class AppModel {
         let generation = openGeneration
         suppressedAutoOpenID = nil
         TethersnapLog.notice(.app, "opening \(descriptor.logName) (was \(phase.logName))", private: descriptor.logDetail)
-        // Another source starts unfiltered; reopening this one (Try Again, the
-        // reconnect after a cancelled export) keeps the folder being shown.
-        if descriptor.id != activeSource?.id {
-            folderScope = .all
-        }
         activeSource = descriptor
         phase = .opening
         resetSourceState()
@@ -595,7 +600,6 @@ final class AppModel {
         resetSourceState()
         activeSource = nil
         phase = .noSource
-        folderScope = .all
         TethersnapLog.notice(.app, "no source open")
         await service.close(detached: detached)
     }

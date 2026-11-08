@@ -60,6 +60,9 @@ struct DetailView: View {
     /// The scroll view's height: the grid content is stretched to at least
     /// this, so the empty pane below a short grid is still grid space.
     @State private var viewportHeight: CGFloat = 0
+    /// Reset to the top when the sidebar switches folders: the grid stays the
+    /// same scroll view, so the old folder's offset would land mid-list.
+    @State private var scrollPosition = ScrollPosition(edge: .top)
 
     var body: some View {
         @Bindable var model = model
@@ -224,6 +227,8 @@ struct DetailView: View {
                 .coordinateSpace(name: GridSpace.name)
                 .onPreferenceChange(CellFramesKey.self) { frames.frames = $0 }
         }
+        .scrollPosition($scrollPosition)
+        .onChange(of: model.folderScope) { scrollPosition.scrollTo(edge: .top) }
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.height
         } action: { height in
