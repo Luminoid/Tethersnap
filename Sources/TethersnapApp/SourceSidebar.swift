@@ -83,10 +83,13 @@ struct SourceSidebar: View {
     }
 
     private func folderRow(_ folder: CaptureFolder) -> some View {
-        Label(folder.name ?? L10n.groupOther, systemImage: "folder")
+        let name = folder.name ?? L10n.groupOther
+        return Label(name, systemImage: "folder")
             .lineLimit(1)
             .badge(folder.count)
-            .help(folder.name ?? L10n.groupOther)
+            .help(name)
+            // With a badge, the count alone names the row ("5", not the folder).
+            .accessibilityLabel("\(name), \(L10n.capturesCount(folder.count))")
             .tag(AppModel.SidebarItem.folder(folder.name))
     }
 }
